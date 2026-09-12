@@ -1,0 +1,77 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---- Virtualenv ----
+.venv/
+venv/
+env/
+
+# ---- Browser / scraper runtime state (do NOT commit) ----
+# .bds_profile/ = Playwright persistent profile (Cloudflare cf_clearance)
+# .chotot_cache/ = Chợ Tốt geo/response cache
+# .cache/raw/   = `manage.py ingest`'s local body cache (`--cache-dir`, RawBodyCache):
+#                 decompressed raw bodies keyed by content sha256. Pure scratch —
+#                 every byte is re-derivable from the raw store, and a listing page
+#                 can be 11 MB, so committing it is all cost and no benefit.
+.bds_profile/
+.chotot_cache/
+.cache/
+*.log
+
+# ---- Scrape output ----
+# There is no local data/ folder any more: parsed listings + run/fetch history
+# live in Postgres, raw fetch bodies live in S3/MinIO (see .plans/07-*.md).
+# `python -m crawlkit.export` dumps listings back to JSONL on demand.
+
+# ---- Review dumps ----
+# `crawlkit.rawcat --all --out-dir review/…` writes decompressed fetch bodies
+# here for eyeballing a crawl; they are reproducible from S3 and can be huge.
+review/
+
+# ---- Temp / working dirs ----
+temp/
+.temp/
+.plans/
+.worktrees/
+tmp/
+*.tmp
+
+# ---- Runtime logs (structured logging, plan 03) ----
+# *.log above already covers individual files; the directory is listed too so
+# an empty logs/ tree (or one containing non-.log files) is still ignored.
+logs/
+
+# ---- Environment / secrets ----
+# Ignore real env files, but KEEP templates (.env.tpl / .env.example / .env.sample).
+.env
+.env.*
+*.env
+!.env.tpl
+!.env.example
+!.env.sample
+env.sh
+
+#password.txt của mqtt
+*password.txt
+
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+.plans
+.worktrees
+.repos
+tmp
+
+#docs
+docs/
