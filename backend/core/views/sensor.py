@@ -1,3 +1,4 @@
+from drf_spectacular.utils import extend_schema
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 
@@ -6,6 +7,7 @@ from core.models import Sensor
 from core.serializers.sensor import SensorSerializer
 
 
+@extend_schema(tags=["Sensors"])
 class SensorViewSet(viewsets.ModelViewSet):
     serializer_class = SensorSerializer
     permission_classes = (IsAuthenticated,)

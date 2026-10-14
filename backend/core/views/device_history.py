@@ -1,3 +1,4 @@
+from drf_spectacular.utils import extend_schema
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 
@@ -6,6 +7,7 @@ from core.models import DeviceHistory
 from core.serializers.device_history import DeviceHistorySerializer
 
 
+@extend_schema(tags=["Device History"])
 class DeviceHistoryViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = DeviceHistorySerializer
     permission_classes = (IsAuthenticated,)

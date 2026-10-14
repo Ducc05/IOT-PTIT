@@ -201,6 +201,18 @@ CELERY_TASK_PUBLISH_RETRY = False
 SPECTACULAR_SETTINGS = {
     "TITLE": "IoT backend API",
     "VERSION": "1.0.0",
+    "TAGS": [
+        {"name": "Sensors", "description": "Sensor registry and configuration."},
+        {
+            "name": "Sensor Data",
+            "description": "Sensor readings and monitoring data.",
+        },
+        {"name": "Devices", "description": "Device registry and control commands."},
+        {
+            "name": "Device History",
+            "description": "Device control history and command status.",
+        },
+    ],
     "ENUM_NAME_OVERRIDES": {
         "SensorStatusEnum": ["ACTIVE", "INACTIVE"],
         "CommandStatusEnum": ["SUCCESS", "FAILED", "PENDING"],

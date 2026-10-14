@@ -11,6 +11,7 @@ from core.serializers.device_history import DeviceHistorySerializer
 from core.serializers.mqtt import DeviceControlSerializer
 
 
+@extend_schema(tags=["Devices"])
 class DeviceViewSet(viewsets.ModelViewSet):
     serializer_class = DeviceSerializer
     permission_classes = (IsAuthenticated,)
@@ -33,6 +34,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
         DeviceSerializer(instance).delete()
 
     @extend_schema(
+        tags=["Devices"],
         request=DeviceControlSerializer,
         responses={202: DeviceHistorySerializer, 200: DeviceHistorySerializer},
     )

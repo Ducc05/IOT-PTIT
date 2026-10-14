@@ -14,6 +14,7 @@ from core.serializers.sensor_data_stats import (
 )
 
 
+@extend_schema(tags=["Sensor Data"])
 class SensorDataViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = SensorDataSerializer
     permission_classes = (IsAuthenticated,)
@@ -23,7 +24,9 @@ class SensorDataViewSet(viewsets.ReadOnlyModelViewSet):
     filterset_class = SensorDataFilterSet
     ordering_fields = ("created_at", "value")
 
-    @extend_schema(responses=SensorLatestResponseSerializer)
+    @extend_schema(
+        tags=["Sensor Data"], responses=SensorLatestResponseSerializer
+    )
     @action(detail=False, methods=["get"], url_path="latest")
     def latest(self, request):
         response = Response(SensorLatestResponseSerializer.read(request.query_params))
@@ -31,6 +34,7 @@ class SensorDataViewSet(viewsets.ReadOnlyModelViewSet):
         return response
 
     @extend_schema(
+        tags=["Sensor Data"],
         parameters=[
             OpenApiParameter("from", OpenApiTypes.DATETIME),
             OpenApiParameter("to", OpenApiTypes.DATETIME),

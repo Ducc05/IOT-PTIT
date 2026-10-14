@@ -113,7 +113,9 @@ bảo đảm không mất dữ liệu. [PubSubClient API](https://pubsubclient.k
 
 ## API
 
-Swagger: `/api/schema/swagger-ui/`; OpenAPI: `/api/schema/`.
+Swagger UI: `/docs` (also accepts `/docs/`); OpenAPI schema: `/api/schema/`.
+Swagger groups API v1 operations by the Sensors, Sensor Data, Devices, and
+Device History tags.
 
 | Endpoint | Hành vi |
 | --- | --- |
