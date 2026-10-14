@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { createMockApi } from '../../src/api/mock'
+import { fulfillDashboardLists } from './helpers/dashboardLists'
 
 const origin = 'http://127.0.0.1:5174'
 
@@ -22,8 +23,10 @@ test('anonymous visitors see only sign in, then JWT login opens Dashboard and lo
     }
     await route.fulfill({ json: account })
   })
-  await page.route(`${origin}/api/v1/sensor-data/latest/`, route => route.fulfill({ json: latest }))
-  await page.route(`${origin}/api/v1/sensor-data/trends/?samples=20`, route => route.fulfill({ json: trends }))
+  await page.route(`${origin}/api/v1/**`, async route => {
+    if (await fulfillDashboardLists(route, latest, trends)) return
+    await route.fulfill({ status: 404, json: {} })
+  })
   await page.route(`${origin}/api/v1/devices/`, route => route.fulfill({ json: { count: devices.length, next: null, previous: null, results: devices } }))
 
   await page.goto(`${origin}/dashboard`)
@@ -104,8 +107,10 @@ test('registration validates confirmation and signs in with the issued JWT', asy
     expect(route.request().postDataJSON()).toMatchObject({ username: 'new_operator', email: 'new@example.com', password_confirm: 'StrongPass-2026!' })
     await route.fulfill({ status: 201, json: { id: 2, username: 'new_operator', email: 'new@example.com', access: 'new-access', refresh: 'new-refresh' } })
   })
-  await page.route(`${origin}/api/v1/sensor-data/latest/`, route => route.fulfill({ json: latest }))
-  await page.route(`${origin}/api/v1/sensor-data/trends/?samples=20`, route => route.fulfill({ json: trends }))
+  await page.route(`${origin}/api/v1/**`, async route => {
+    if (await fulfillDashboardLists(route, latest, trends)) return
+    await route.fulfill({ status: 404, json: {} })
+  })
   await page.route(`${origin}/api/v1/devices/`, route => route.fulfill({ json: { count: devices.length, next: null, previous: null, results: devices } }))
 
   await page.goto(`${origin}/register`)

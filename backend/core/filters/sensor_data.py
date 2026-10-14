@@ -10,6 +10,9 @@ class SensorDataFilterSet(django_filters.FilterSet):
     type = django_filters.ChoiceFilter(
         field_name="sensor__type", choices=Sensor.Type.choices
     )
+    sensor_status = django_filters.ChoiceFilter(
+        field_name="sensor__status", choices=Sensor.Status.choices
+    )
     value = django_filters.NumberFilter(field_name="value")
     locals()["from"] = django_filters.IsoDateTimeFilter(
         field_name="created_at", lookup_expr="gte"
@@ -18,4 +21,4 @@ class SensorDataFilterSet(django_filters.FilterSet):
 
     class Meta:
         model = SensorData
-        fields = ("search", "type", "value", "from", "to")
+        fields = ("search", "type", "sensor_status", "value", "from", "to")

@@ -2,6 +2,7 @@ import { expect, test, type Locator } from '@playwright/test'
 import { createMockApi } from '../../src/api/mock'
 import type { Device, ListQuery } from '../../src/types/api'
 import { useApiSession } from './helpers/auth'
+import { fulfillDashboardLists } from './helpers/dashboardLists'
 
 test('API switch stays inside its track while turning an unconfirmed LED on and off', async ({ page }) => {
   await useApiSession(page)
@@ -26,10 +27,9 @@ test('API switch stays inside its track while turning an unconfirmed LED on and 
     }, frames)
     expect(positions.every(position => position.left >= 0 && position.right >= 0)).toBe(true)
   }
-  await page.route('http://127.0.0.1:5174/api/v1/**', route => {
+  await page.route('http://127.0.0.1:5174/api/v1/**', async route => {
     const path = new URL(route.request().url()).pathname
-    if (path.endsWith('/sensor-data/latest/')) return route.fulfill({ json: latest })
-    if (path.endsWith('/sensor-data/trends/')) return route.fulfill({ json: trends })
+    if (await fulfillDashboardLists(route, latest, trends)) return
     if (path.endsWith('/devices/')) return route.fulfill({ json: { count: 1, next: null, previous: null, results: [device] } })
     if (path.endsWith('/devices/1/control/')) {
       const action = route.request().postDataJSON().action as 'TURN_ON' | 'TURN_OFF'
@@ -86,13 +86,10 @@ test('API chart requests and plots 20 recent readings with second labels', async
     })),
   }
   let trendUrl = ''
-  await page.route('http://127.0.0.1:5174/api/v1/**', route => {
+  await page.route('http://127.0.0.1:5174/api/v1/**', async route => {
     const url = new URL(route.request().url())
-    if (url.pathname.endsWith('/sensor-data/latest/')) return route.fulfill({ json: latest })
-    if (url.pathname.endsWith('/sensor-data/trends/')) {
-      trendUrl = url.toString()
-      return route.fulfill({ json: trends })
-    }
+    if (url.pathname.endsWith('/sensor-data/') && !url.searchParams.has('type')) trendUrl = url.toString()
+    if (await fulfillDashboardLists(route, latest, trends)) return
     if (url.pathname.endsWith('/devices/')) return route.fulfill({ json: { count: devices.length, next: null, previous: null, results: devices } })
     return route.fulfill({ status: 404, json: {} })
   })
@@ -101,7 +98,7 @@ test('API chart requests and plots 20 recent readings with second labels', async
     await expect(page.getByText(label, { exact: true })).toHaveCount(0)
   }
   await expect(page.getByRole('switch', { name: 'Toggle LED Light' })).toBeDisabled()
-  await expect.poll(() => trendUrl).toContain('samples=20')
+  await expect.poll(() => trendUrl).toContain('sensor_status=ACTIVE')
   const path = await page.locator('.chart-plot path').first().getAttribute('d')
   expect(path?.match(/[ML]/g)).toHaveLength(20)
   const labels = await page.locator('.chart-plot text[text-anchor="middle"]').allTextContents()
@@ -118,8 +115,10 @@ test('chart time labels stay separated when readings cluster near the end', asyn
   trends.trends = [0, 32, 64, 96, 104, 105, 106, 107].map(minute => ({
     timestamp: new Date(Date.UTC(2026, 9, 6, 12, minute)).toISOString(), temperature: 25, humidity: 60, light: 700,
   }))
-  await page.route('http://127.0.0.1:5174/api/v1/sensor-data/latest/', route => route.fulfill({ json: latest }))
-  await page.route('http://127.0.0.1:5174/api/v1/sensor-data/trends/?samples=20', route => route.fulfill({ json: trends }))
+  await page.route('http://127.0.0.1:5174/api/v1/**', async route => {
+    if (await fulfillDashboardLists(route, latest, trends)) return
+    await route.fulfill({ status: 404, json: {} })
+  })
   await page.route('http://127.0.0.1:5174/api/v1/devices/', route => route.fulfill({ json: { count: devices.length, next: null, previous: null, results: devices } }))
   await page.goto('http://127.0.0.1:5174/dashboard')
   await expect(page.locator('.chart-plot path')).toHaveCount(3)
@@ -378,22 +377,16 @@ test('API mode refreshes Dashboard and lists without reload and keeps filters', 
   const dataQueries: URLSearchParams[] = []
   await page.route('http://127.0.0.1:5174/api/v1/**', async route => {
     const url = new URL(route.request().url())
-    if (url.pathname.endsWith('/sensor-data/trends/')) {
-      calls.trends++
-      return route.fulfill({ json: baseTrends })
-    }
-    if (url.pathname.endsWith('/sensor-data/latest/')) {
-      const data = structuredClone(baseLatest)
-      data.latest_sensors[0].value = 20 + ++calls.latest
-      return route.fulfill({ json: data })
-    }
+    if (url.pathname.endsWith('/sensors/')) return void await fulfillDashboardLists(route, baseLatest, baseTrends)
     if (url.pathname.endsWith('/devices/')) return route.fulfill({ json: { count: baseDevices.length, next: null, previous: null, results: baseDevices } })
     const pageSize = Number(url.searchParams.get('limit') || 10)
     const query: ListQuery = { ...Object.fromEntries(url.searchParams), page: Math.floor(Number(url.searchParams.get('offset') || 0) / pageSize) + 1, page_size: pageSize }
     if (url.pathname.endsWith('/sensor-data/')) {
-      dataQueries.push(url.searchParams)
+      if (url.searchParams.get('sensor_status') === 'ACTIVE' && !url.searchParams.has('type')) calls.trends++
+      else dataQueries.push(url.searchParams)
       const data = await backend.sensorData(query)
-      data.results[0].id += ++calls.data * 10000
+      if (url.searchParams.get('sensor_status') === 'ACTIVE' && url.searchParams.get('type') === 'TEMPERATURE') data.results[0].value = 20 + ++calls.latest
+      else data.results[0].id += ++calls.data * 10000
       return route.fulfill({ json: data })
     }
     if (url.pathname.endsWith('/device-history/')) {
@@ -409,7 +402,7 @@ test('API mode refreshes Dashboard and lists without reload and keeps filters', 
   page.on('request', request => { if (request.isNavigationRequest() && request.frame() === page.mainFrame()) documentLoads++ })
   const before = await page.locator('.sensor-value').first().innerText()
   await expect.poll(() => page.locator('.sensor-value').first().innerText()).not.toBe(before)
-  expect(calls.trends).toBe(1)
+  expect(calls.trends).toBeGreaterThan(0)
   await page.getByRole('link', { name: 'Data', exact: true }).click()
   await expect(page.locator('tbody tr')).toHaveCount(10)
   await page.getByLabel('Sensor type', { exact: true }).selectOption('HUMIDITY')

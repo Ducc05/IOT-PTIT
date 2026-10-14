@@ -32,7 +32,6 @@ function controlDevice(device: import('../types/api').Device, action: import('..
   <div class="page dashboard-page">
     <PageHeader title="Dashboard" subtitle="" />
     <ResourceNotice :error="latestError" :loading="latestLoading" :empty="!latestData" @retry="refreshLatest" />
-    <div v-if="environment.source === 'api' && latestData?.sensor_alerts?.length" class="error-banner" role="alert">DHT11 read failed. Temperature and humidity show their last valid readings.</div>
     <div v-if="latestData" class="sensor-grid"><SensorCard v-for="sensor in sensors" :key="sensor.type" :sensor="sensor" /></div>
     <ResourceNotice :error="trendsError" :loading="trendsLoading" :empty="!trendsData" @retry="refreshTrends" />
     <SensorTrendsChart v-if="trendsData" :points="trendsData.trends" />

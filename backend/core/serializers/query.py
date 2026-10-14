@@ -4,24 +4,7 @@ from datetime import timedelta
 
 from django.db import connection
 from django.utils import timezone
-from django.utils.dateparse import parse_datetime
 from django_celery_results.models import TaskResult
-from rest_framework.exceptions import ValidationError
-
-
-def validate_query(params, allowed):
-    if any(key not in allowed or len(params.getlist(key)) != 1 for key in params):
-        raise ValidationError("Unknown or repeated query parameter.")
-
-
-def date_value(value):
-    try:
-        date = parse_datetime(value)
-    except (ValueError, TypeError) as exc:
-        raise ValidationError("Invalid datetime.") from exc
-    if date is None or timezone.is_naive(date):
-        raise ValidationError("Datetime must include a timezone.")
-    return date
 
 
 def mqtt_health():

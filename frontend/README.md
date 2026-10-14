@@ -41,8 +41,8 @@ FE đã chọn API thật theo mặc định; `.env.local` chỉ cần khi đổ
 `VITE_DATA_SOURCE=mock` bật dữ liệu mẫu để xem UI khi chưa chạy backend.
 Khởi động lại dev server hoặc build lại sau khi đổi biến môi trường.
 
-Adapter thật theo [backend hiện tại](../backend/README.md): các action `sensor-data/latest/`,
-`sensor-data/trends/`, danh sách `devices/`, `device-history/`, control và polling.
+Adapter thật theo [backend hiện tại](../backend/README.md): các danh sách `sensors/`,
+`sensor-data/`, `devices/`, `device-history/`, control và polling.
 Đăng ký qua `/register` dùng Django
 User hiện cấu hình; `/login` nhận token từ SimpleJWT. Mọi request nội dung gửi
 Bearer access token. Token được giữ trong `sessionStorage` của tab, xác minh
@@ -60,8 +60,7 @@ tới backend.
 Firmware gửi Light dưới dạng ADC, vì vậy FE ở chế độ API hiển thị **ADC** ở
 card và biểu đồ. Firmware không gửi thời điểm đo; `measured_at=null` và
 `created_at` là giờ backend nhận bản tin. Thiết bị chưa có phản hồi trạng
-thái live sẽ hiển thị **Unconfirmed**. Lỗi đọc DHT11 xuất hiện trên Dashboard
-khi backend biết đang có lỗi; không tạo số đo nhiệt độ/độ ẩm bằng 0.
+thái live sẽ hiển thị **Unconfirmed**. Dashboard chỉ hiển thị số đo đã lưu; thiếu dữ liệu được để trống, không tạo số đo bằng 0 hay suy diễn lỗi DHT11.
 
 Profile ở chế độ API lấy `full_name`, `student_id` và email từ `/api/auth/me/`. Bấm tên hoặc Mã sinh viên để sửa hai giá trị đầu qua PATCH cùng endpoint; nút Logout chỉ ở Profile. Email và username không đổi qua form này. `src/config/profile.ts` chỉ chứa thông tin mẫu của chế độ mock và các URL công khai; URL chưa có được hiển thị disabled.
 
@@ -99,7 +98,7 @@ src/
 Document luôn cố định trong `100dvh`, không cuộn toàn trang. Dashboard/chart co theo phần chiều cao còn lại. Data/History cố định 10 bản ghi mỗi trang (trang cuối hoặc kết quả lọc có thể ít hơn); không tự đổi page_size theo viewport. Hàng bảng dùng layout gọn để giữ 10 bản ghi trong chiều cao màn hình desktop. Header/footer/phân trang luôn ở trong viewport. Profile dùng grid co theo chiều cao. Mobile có navigation drawer và bảng cuộn ngang. Màn hình rất thấp hoặc backend có nhiều thiết bị vẫn cần cuộn trong vùng nội dung tương ứng.
 
 Polling không chồng request, bỏ response cũ, dừng khi rời route/tab ẩn, refresh khi tab hiện lại. Background refresh giữ dữ liệu đã có; loading/error/empty được xử lý riêng. Control không tự kết luận TIMEOUT khi mất mạng: giữ intent/idempotency key, cho kiểm tra lại, và nối lại polling khi quay lại Dashboard.
-Dashboard gọi riêng action số đo mới nhất và danh sách thiết bị theo `VITE_REFRESH_MS`; biểu đồ gọi `sensor-data/trends/?samples=20` theo `VITE_TRENDS_REFRESH_MS` để hiển thị 20 thời điểm đo mới nhất, kể cả khi dữ liệu cũ hơn 24 giờ.
+Dashboard lấy sensor ACTIVE từ `sensors/?status=ACTIVE` và số đo mới nhất mỗi loại từ `sensor-data/?type=...&sensor_status=ACTIVE&ordering=-created_at,-id&limit=1` theo `VITE_REFRESH_MS`. Biểu đồ phân trang `sensor-data/?sensor_status=ACTIVE&ordering=-created_at,-id` theo `VITE_TRENDS_REFRESH_MS`, rồi gom 20 thời điểm đo mới nhất, kể cả khi dữ liệu cũ hơn 24 giờ.
 
 ## Nguồn thiết kế và giới hạn
 

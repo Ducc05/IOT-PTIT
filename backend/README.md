@@ -120,13 +120,11 @@ Device History tags.
 | Endpoint | Hành vi |
 | --- | --- |
 | `/api/v1/sensors/` | ModelViewSet; đọc và ghi đều cần JWT |
-| `/api/v1/sensor-data/` | ReadOnlyModelViewSet; FilterSet theo name/type/value/from/to, OrderingFilter theo created_at/value |
+| `/api/v1/sensor-data/` | ReadOnlyModelViewSet; FilterSet theo name/type/sensor_status/value/from/to, OrderingFilter theo created_at/value/id |
 | `/api/v1/devices/` | ModelViewSet; current_state chỉ đọc, MQTT status cập nhật state |
 | `/api/v1/devices/{id}/control/` | POST cần JWT: action TURN_ON/TURN_OFF + idempotency_key; trả 202 PENDING |
 | `/api/v1/device-history/` | ReadOnlyModelViewSet; FilterSet theo device/action/status/from/to, search ID, OrderingFilter theo created_at |
 | `/api/v1/device-history/{id}/` | Đọc kết quả bằng History PK, kể cả PENDING/FAILED |
-| `/api/v1/sensor-data/latest/` | Action của `SensorDataViewSet`: ba slot sensor, NO_DATA/STALE và cảnh báo lỗi DHT hiện tại |
-| `/api/v1/sensor-data/trends/` | Action của `SensorDataViewSet`: `samples=20` lấy 20 thời điểm đo mới nhất theo thứ tự thời gian; hoặc dùng `from`, `to`, `interval=auto/raw/1m/5m/1h` cho khoảng thời gian (không kết hợp hai chế độ) |
 | `/api/auth/register/` | Tạo tài khoản qua Django User hiện cấu hình và cấp access/refresh token SimpleJWT |
 | `/api/auth/token/`, `/api/auth/token/refresh/` | SimpleJWT; POST username/password, rồi Bearer access token |
 | `/api/auth/me/` | GET cần JWT trả username, email, `full_name`, `student_id`; PATCH cần JWT chỉ cập nhật `full_name` và `student_id` của chính người đăng nhập |
@@ -173,11 +171,10 @@ là chuỗi History PK dùng để polling HTTP; **không phải command_id trê
 - Các message sensor có cùng giá trị vẫn là số đo khác nhau. Firmware không có
   message_id; không dedup bằng hash và không tuyên bố exactly-once.
 
-Lỗi DHT hiện tại xuất hiện trong `sensor-data/latest.sensor_alerts` và log có giới hạn theo
-transition. Payload thành công có đủ cả Temperature/Humidity mới xóa lỗi DHT.
-Khi chưa biết trạng thái reader/DHT, alerts=null; dữ liệu mất không được coi là đã
-hồi phục. Đây là trạng thái hiện tại qua Celery results, **không phải kho thông báo
-unread hay AlertEpisode bền vững**. Không tự thêm model notification/rule/outbox.
+Lỗi DHT hiện tại được ghi log có giới hạn theo transition. Payload thành công
+có đủ cả Temperature/Humidity mới xóa lỗi DHT. Danh sách số đo chỉ chứa dữ liệu
+đã lưu, nên Dashboard suy ra trạng thái thiếu dữ liệu từ thời điểm nhận mới nhất;
+không suy diễn lỗi DHT từ một khoảng trống dữ liệu.
 
 ## Điều khiển và các giới hạn của firmware hiện tại
 

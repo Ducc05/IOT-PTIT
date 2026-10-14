@@ -18,7 +18,6 @@ export interface Device {
 }
 export interface SensorLatestResponse {
   generated_at: string; latest_sensors: SensorLatest[]
-  sensor_alerts?: { code: string; status: string; observed_at: string }[] | null
 }
 export interface SensorTrendsResponse {
   generated_at: string; effective_interval: 'raw' | '1m' | '5m' | '1h'; trends: SensorTrendPoint[]
@@ -27,6 +26,7 @@ export interface SensorDataRow {
   id: number; sensor: { id: number; sensor_code?: string | null; name: string }; type: SensorType
   value: number; unit: string; measured_at: string | null; created_at: string
 }
+export interface SensorRegistryRow { id: number; name: string; type: SensorType; unit: string; status: 'ACTIVE' | 'INACTIVE' }
 export interface CommandResource {
   id: number; command_id: string; device: { id: number; device_code: string; name: string }
   user?: { username: string } | null

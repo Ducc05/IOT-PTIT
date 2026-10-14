@@ -7,6 +7,7 @@ from django.core.management import call_command
 from django.db import DatabaseError
 from django.test import TestCase, override_settings
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from django_celery_results.models import TaskResult
 from rest_framework.exceptions import ValidationError
 from rest_framework.test import APIClient
@@ -181,10 +182,15 @@ class BackendTests(TestCase):
         item["received_at"] = timezone.now() - timedelta(seconds=120)
         self.reader.process(item)
         self.assertEqual(self.temp.data.get().created_at, item["received_at"])
-        response = self.client.get("/api/v1/sensor-data/latest/")
+        response = self.client.get(
+            "/api/v1/sensor-data/?type=TEMPERATURE&sensor_status=ACTIVE&limit=1"
+        )
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["latest_sensors"][0]["status"], "STALE")
-        self.assertIsNone(response.data["latest_sensors"][0]["measured_at"])
+        self.assertEqual(
+            parse_datetime(response.data["results"][0]["created_at"]),
+            item["received_at"],
+        )
+        self.assertIsNone(response.data["results"][0]["measured_at"])
 
     def test_retained_sensor_rejected(self):
         with self.assertRaises(ValidationError):
@@ -367,97 +373,25 @@ class BackendTests(TestCase):
         self.assertEqual(second["accepted"], 0)
         self.assertEqual(SensorData.objects.count(), 3)
 
-    def test_sensor_data_actions_keep_empty_slots_without_fake_zero(self):
-        response = self.client.get("/api/v1/sensor-data/latest/")
-        self.assertEqual(response.status_code, 200)
-        self.assertNotIn("trends", response.data)
-        self.assertEqual(len(response.data["latest_sensors"]), 3)
-        self.assertTrue(
-            all(
-                row["status"] == "NO_DATA" and row["value"] is None
-                for row in response.data["latest_sensors"]
-            )
-        )
-        self.assertEqual(response.data["latest_sensors"][2]["unit"], "ADC")
-        self.assertIsNone(response.data["latest_sensors"][0]["created_at"])
-        self.assertNotIn("recorded_at", response.data["latest_sensors"][0])
-        trends = self.client.get("/api/v1/sensor-data/trends/")
-        self.assertEqual(trends.status_code, 200)
-        self.assertEqual(trends.data["effective_interval"], "5m")
-        self.assertEqual(trends.data["trends"], [])
-        self.assertNotIn("latest_sensors", trends.data)
-        self.assertNotIn("devices", trends.data)
-
-    def test_dashboard_buckets_and_missing_type_null(self):
+    def test_sensor_data_list_filters_active_sensors_for_dashboard(self):
         self.save_sensor({"success": True, "temperature": 20})
-        response = self.client.get("/api/v1/sensor-data/trends/")
-        self.assertEqual(response.status_code, 200)
-        point = next(
-            row for row in response.data["trends"] if row["temperature"] is not None
+        response = self.client.get(
+            "/api/v1/sensor-data/?type=TEMPERATURE&sensor_status=ACTIVE"
+            "&ordering=-created_at,-id&limit=1"
         )
-        self.assertEqual(point["temperature"], 20)
-        self.assertIsNone(point["humidity"])
-        self.assertIsNone(point["light"])
-
-    def test_dashboard_raw_trends_are_available_separately(self):
-        self.save_sensor({"success": True, "temperature": 20})
-        response = self.client.get("/api/v1/sensor-data/trends/?interval=raw")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["effective_interval"], "raw")
-        self.assertEqual(response.data["trends"][0]["temperature"], 20)
-        self.assertIsNone(response.data["trends"][0]["humidity"])
-        self.assertNotIn("devices", response.data)
-
-    def test_dashboard_recent_trends_use_latest_20_times_not_24_hours(self):
-        base = timezone.now() - timedelta(days=2)
-        for index in range(25):
-            payload = {"success": True, "temperature": 20 + index / 10}
-            if index < 24:
-                payload.update(humidity=60, light=100 + index)
-            serializer = SensorMQTTSerializer(
-                data=payload,
-                context={"received_at": base + timedelta(seconds=index)},
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["results"][0]["value"], 20)
+        self.temp.status = "INACTIVE"
+        self.temp.save(update_fields=["status"])
+        response = self.client.get(
+            "/api/v1/sensor-data/?type=TEMPERATURE&sensor_status=ACTIVE&limit=1"
+        )
+        self.assertEqual(response.data["count"], 0)
+        for action in ("latest", "trends"):
+            self.assertEqual(
+                self.client.get(f"/api/v1/sensor-data/{action}/").status_code, 404
             )
-            serializer.is_valid(raise_exception=True)
-            serializer.save()
-
-        response = self.client.get("/api/v1/sensor-data/trends/?samples=20")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["effective_interval"], "raw")
-        self.assertEqual(len(response.data["trends"]), 20)
-        self.assertEqual(
-            response.data["trends"][0]["timestamp"], base + timedelta(seconds=5)
-        )
-        self.assertEqual(response.data["trends"][-1]["temperature"], 22.4)
-        self.assertIsNone(response.data["trends"][-1]["humidity"])
-        self.assertIsNone(response.data["trends"][-1]["light"])
-
-    def test_dashboard_recent_trend_parameters_are_bounded(self):
-        for query in (
-            "samples=0",
-            "samples=101",
-            "samples=nope",
-            "samples=20&interval=raw",
-        ):
-            with self.subTest(query=query):
-                self.assertEqual(
-                    self.client.get(f"/api/v1/sensor-data/trends/?{query}").status_code,
-                    400,
-                )
-
-    def test_dashboard_trend_parameters_are_isolated(self):
-        self.assertEqual(
-            self.client.get("/api/v1/sensor-data/latest/?interval=raw").status_code,
-            400,
-        )
-        self.assertEqual(
-            self.client.get("/api/v1/sensor-data/trends/?interval=raw").status_code,
-            200,
-        )
-        self.assertEqual(
-            self.client.get("/api/v1/sensor-data/trends/?interval=invalid").status_code,
-            400,
-        )
 
     def test_reading_list_filter_sort_pagination(self):
         for value in [20, 21, 22]:
@@ -542,8 +476,6 @@ class BackendTests(TestCase):
     def test_provisioning_requires_authenticated_user(self):
         self.client.force_authenticate(None)
         for path in (
-            "/api/v1/sensor-data/latest/",
-            "/api/v1/sensor-data/trends/",
             "/api/v1/sensors/",
             "/api/v1/sensor-data/",
             "/api/v1/devices/",
@@ -765,7 +697,7 @@ class BackendTests(TestCase):
         self.assertNotIn("password", registration.data)
         client.credentials(HTTP_AUTHORIZATION="Bearer " + registration.data["access"])
         self.assertEqual(client.get("/api/auth/me/").data["email"], payload["email"])
-        self.assertEqual(client.get("/api/v1/sensor-data/latest/").status_code, 200)
+        self.assertEqual(client.get("/api/v1/sensor-data/").status_code, 200)
         client.credentials()
         refresh = client.post(
             "/api/auth/token/refresh/",
