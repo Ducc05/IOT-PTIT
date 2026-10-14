@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
+import json
 from pathlib import Path
 
 import dj_database_url
@@ -28,10 +29,11 @@ SECRET_KEY = "django-insecure-w!=i@9&dcvidxd!e*flg@)_lz3i3!_no!5^!+hoq9^2mxm0aw^
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-]
+ALLOWED_HOSTS = config("DJANGO_ALLOWED_HOSTS", default="localhost,127.0.0.1").split(",")
+CORS_ALLOWED_ORIGINS = config(
+    "CORS_ALLOWED_ORIGINS",
+    default="http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173",
+).split(",")
 
 
 # Application definition
@@ -76,13 +78,14 @@ REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ],
-    "DEFAULT_PAGINATION_CLASS": "libs.drf.pagination.PageNumberPagination",
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.LimitOffsetPagination",
     "DEFAULT_FILTER_BACKENDS": [
         "django_filters.rest_framework.DjangoFilterBackend",
         "rest_framework.filters.OrderingFilter",
     ],
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
-    "EXCEPTION_HANDLER": "drf_standardized_errors.handler.exception_handler",
+    "EXCEPTION_HANDLER": "libs.drf.exceptions.exception_handler",
     "PAGE_SIZE": 15,
 }
 
@@ -155,5 +158,54 @@ STATIC_URL = "static/"
 MAILERS = {
     "default": {
         "BACKEND": "django.core.mail.backends.console.EmailBackend",
+    },
+}
+
+# Firmware contract: mqtt/main.cpp. HTTP startup never connects to MQTT.
+MQTT_HOST = config("MQTT_HOST", default="")
+MQTT_PORT = config("MQTT_PORT", default=1884, cast=int)
+MQTT_USERNAME = config("MQTT_USERNAME", default="")
+MQTT_PASSWORD = config("MQTT_PASSWORD", default="")
+MQTT_CLIENT_ID = config("MQTT_CLIENT_ID", default="iot-celery-reader")
+MQTT_TLS_ENABLED = config("MQTT_TLS_ENABLED", default=False, cast=bool)
+MQTT_CA_CERTS = config("MQTT_CA_CERTS", default="")
+MQTT_QUEUE_MAX_MESSAGES = config("MQTT_QUEUE_MAX_MESSAGES", default=1000, cast=int)
+MQTT_COMMAND_TIMEOUT_SECONDS = config(
+    "MQTT_COMMAND_TIMEOUT_SECONDS", default=5, cast=int
+)
+MQTT_CONNECT_TIMEOUT_SECONDS = config(
+    "MQTT_CONNECT_TIMEOUT_SECONDS", default=2, cast=int
+)
+MQTT_SENSOR_IDS = config("MQTT_SENSOR_IDS", default="{}", cast=json.loads)
+MQTT_DEVICE_IDS = config("MQTT_DEVICE_IDS", default="{}", cast=json.loads)
+CELERY_BROKER_URL = config(
+    "CELERY_BROKER_URL", default="amqp://guest:guest@127.0.0.1:5672//"
+)
+CELERY_RESULT_BACKEND = "django-db"
+CELERY_RESULT_EXTENDED = True
+CELERY_RESULT_EXPIRES = 86400
+CELERY_TASK_TRACK_STARTED = True
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_TASK_ROUTES = {"core.tasks.*": {"queue": "mqtt"}}
+CELERY_BEAT_SCHEDULE = {
+    "read-mqtt-every-5-seconds": {
+        "task": "core.tasks.read_mqtt_data",
+        "schedule": 5.0,
+        "options": {"queue": "mqtt", "expires": 5},
+    },
+}
+
+CELERY_BROKER_CONNECTION_TIMEOUT = 2
+CELERY_TASK_PUBLISH_RETRY = False
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "IoT backend API",
+    "VERSION": "1.0.0",
+    "ENUM_NAME_OVERRIDES": {
+        "SensorStatusEnum": ["ACTIVE", "INACTIVE"],
+        "CommandStatusEnum": ["SUCCESS", "FAILED", "PENDING"],
+        "ReadingStatusEnum": ["NO_DATA", "STALE", "OK"],
+        "DeviceStateEnum": ["ON", "OFF"],
+        "SensorTypeEnum": ["TEMPERATURE", "HUMIDITY", "LIGHT"],
     },
 }

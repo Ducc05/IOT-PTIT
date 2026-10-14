@@ -42,16 +42,15 @@ class SensorAdmin(admin.ModelAdmin):
 
 @admin.register(SensorData)
 class SensorDataAdmin(admin.ModelAdmin):
-    list_display = ("id", "sensor", "value", "recorded_at", "created_at", "updated_at")
+    list_display = ("id", "sensor", "value", "created_at", "updated_at")
     list_filter = (
         ("id", ALL_VALUES),
         "sensor",
         ("value", ALL_VALUES),
-        "recorded_at",
         "created_at",
         "updated_at",
     )
-    ordering = ("-recorded_at", "-id")
+    ordering = ("-created_at", "-id")
     search_fields = ("sensor__name",)
     readonly_fields = ("created_at", "updated_at")
 

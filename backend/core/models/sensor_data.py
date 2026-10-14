@@ -11,4 +11,3 @@ class SensorData(BaseModel):
         related_name="data",
     )
     value = models.FloatField()
-    recorded_at = models.DateTimeField(db_index=True)
