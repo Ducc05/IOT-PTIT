@@ -186,6 +186,12 @@ CELERY_RESULT_EXTENDED = True
 CELERY_RESULT_EXPIRES = 86400
 CELERY_TASK_TRACK_STARTED = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_TASK_ALWAYS_EAGER = config(
+    "CELERY_TASK_ALWAYS_EAGER", default=True, cast=bool
+)
+CELERY_TASK_EAGER_PROPAGATES = config(
+    "CELERY_TASK_EAGER_PROPAGATES", default=True, cast=bool
+)
 CELERY_TASK_ROUTES = {"core.tasks.*": {"queue": "mqtt"}}
 CELERY_BEAT_SCHEDULE = {
     "read-mqtt-every-5-seconds": {
