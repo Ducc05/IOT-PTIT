@@ -21,11 +21,9 @@ logger = logging.getLogger(__name__)
 TOPICS = [
     ("esp32/sensor/data", 1),
     ("esp32/status", 1),
+    ("esp32/led/+/status", 1),
     ("esp32/led1/status", 1),
     ("esp32/led2/status", 1),
-    ("esp32/led1/history", 1),
-    ("esp32/led2/history", 1),
-    ("esp32/led/history", 1),
 ]
 
 

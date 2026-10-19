@@ -136,9 +136,19 @@ class MQTTEnvelopeSerializer(serializers.Serializer):
                 reader.esp_status_at = item["received_at"]
             return "availability"
         for key in ("LED1", "LED2"):
-            prefix = f"esp32/{key.lower()}"
-            if topic == prefix + "/status":
-                serializer = DeviceStatusMQTTSerializer(data=data)
+            led_id = "1" if key == "LED1" else "2"
+            status_topics = (
+                f"esp32/led/{led_id}/status",
+                f"esp32/{key.lower()}/status",
+            )
+            if topic in status_topics:
+                normalized_data = dict(data)
+                if (
+                    normalized_data.get("device") in (led_id, key.lower(), key)
+                    or "device" not in normalized_data
+                ):
+                    normalized_data["device"] = key
+                serializer = DeviceStatusMQTTSerializer(data=normalized_data)
                 serializer.is_valid(raise_exception=True)
                 if serializer.validated_data["device"] != key:
                     raise ValidationError("Topic/device mismatch.")
@@ -149,8 +159,20 @@ class MQTTEnvelopeSerializer(serializers.Serializer):
                         "received_at": item["received_at"].isoformat(),
                         "retained": retained,
                     }
+                expected = reader.expected.get(key)
+                if (
+                    expected
+                    and item["sequence"] > expected["after_sequence"]
+                    and serializer.validated_data["state"] == expected["state"]
+                    and item["received_at"] < expected["deadline"]
+                ):
+                    reader.response[expected["history_id"]] = {
+                        "control_status": "SUCCESS",
+                        "state_after": serializer.validated_data["state"],
+                        "reason": "STATE_CONFIRMED_VIA_STATUS",
+                    }
                 return "device"
-            if topic == prefix + "/history":
+            if topic == f"esp32/{key.lower()}/history":
                 if retained:
                     raise ValidationError("History must not be retained.")
                 serializer = DeviceHistoryMQTTSerializer(data=data)
@@ -174,7 +196,6 @@ class MQTTEnvelopeSerializer(serializers.Serializer):
                     logger.info(
                         "mqtt_history_without_active_request", extra={"device": key}
                     )
-                # Do not invent a User for an external physical action.
                 return "history"
         if topic == "esp32/led/history":
             if (
@@ -300,7 +321,8 @@ class DeviceExecutionSerializer(serializers.Serializer):
                 "after_sequence": sequence,
                 "deadline": deadline,
             }
-            if not publisher(f"esp32/{key.lower()}/control", state, deadline):
+            led_id = "1" if key == "LED1" else "2" if key == "LED2" else key
+            if not publisher(f"esp32/led/{led_id}/control", state, deadline):
                 return DeviceExecutionSerializer.finish_control(history_id, result)
             while timezone.now() < deadline:
                 reader.drain()

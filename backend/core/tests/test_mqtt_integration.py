@@ -88,29 +88,13 @@ class MQTTIntegrationTests(TransactionTestCase):
                 return
             state = message.payload.decode()
             client.publish(
-                "esp32/led1/status",
+                "esp32/led/1/status",
                 json.dumps({"device": "LED1", "state": state}),
                 retain=False,
             )
-            client.publish(
-                "esp32/led1/history",
-                json.dumps(
-                    {
-                        "device": "LED1",
-                        "action": state,
-                        "previous_state": "OFF",
-                        "state_after": state,
-                        "changed": state == "ON",
-                        "control_status": "SUCCESS",
-                        "reason": "STATE_CHANGED_SUCCESSFULLY"
-                        if state == "ON"
-                        else "ALREADY_IN_TARGET_STATE",
-                    }
-                ),
-            )
 
         self.publisher.on_message = callback
-        _result, _mid = self.publisher.subscribe("esp32/led1/control", qos=1)
+        _result, _mid = self.publisher.subscribe("esp32/led/1/control", qos=1)
         time.sleep(0.1)
         with patch("core.tasks._reader", self.reader):
             outcome = control_device.run(history.pk)

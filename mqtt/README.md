@@ -143,33 +143,22 @@ client trong cùng mạng Docker dùng cổng nội bộ `1883`.
 
 ## Topic và quy ước message
 
-Tất cả topic của ứng dụng bắt đầu bằng `iot/v1/devices/{controller_id}`:
+Các topic chuẩn hóa của ứng dụng:
 
-| Luồng | Topic | Publisher → subscriber | QoS | Retain |
-| --- | --- | --- | ---: | --- |
-| Dữ liệu cảm biến | `.../sensors/data` | ESP → Backend | 1 | Không |
-| Lệnh điều khiển | `.../commands/{device_code}` | Backend → ESP | 1 | Không |
-| Kết quả lệnh | `.../status/{device_code}` | ESP → Backend | 1 | Không |
-| Trạng thái kết nối | `.../availability` | ESP/Broker → Backend | 1 | Có |
+| Luồng | Topic | Publisher → subscriber | QoS | Retain | Payload mẫu |
+| --- | --- | --- | ---: | --- | --- |
+| Dữ liệu cảm biến | `esp32/sensor/data` | ESP32 → Backend | 1 | Không | `{"temperature": 28.5, "humidity": 70, "light": 1024}` |
+| Trạng thái ESP32 | `esp32/status` | ESP32 → Backend | 1 | Có | `{"device":"ESP32","status":"ONLINE","ip":"192.168.1.10"}` |
+| Lệnh điều khiển LED | `esp32/led/<id>/control` | Backend → ESP32 | 1 | Không | `ON` hoặc `OFF` |
+| Lệnh điều khiển All LED | `esp32/led/all/control` | Backend → ESP32 | 1 | Không | `ON` hoặc `OFF` |
+| Trạng thái LED (Reported) | `esp32/led/<id>/status` | ESP32 → Backend | 1 | Có | `{"device":"LED1","state":"ON"}` |
 
-Ví dụ lệnh bật quạt mà Backend publish:
-
-```json
-{
-  "schema_version": 1,
-  "command_id": "01J6M4G8A9AZSBCM9F5H8V5N2E",
-  "device_code": "FAN_01",
-  "action": "TURN_ON",
-  "requested_state": "ON",
-  "issued_at": "2026-09-05T00:00:00.000Z",
-  "expires_at": "2026-09-05T00:00:05.000Z"
-}
-```
-
-ESP chỉ thực thi command chưa hết hạn, xử lý lặp theo `command_id`, rồi gửi
-status với cùng `command_id`. Không dùng retain cho command để tránh thiết bị
-vừa kết nối lại thực thi lệnh cũ. Chi tiết schema, validation và Last Will xem
-[MQTT contract](../docs/backend/04-mqtt-contract.md).
+### Quy trình điều khiển (State Confirmation Flow)
+1. Backend gửi lệnh `ON` hoặc `OFF` tới topic `esp32/led/<id>/control`.
+2. ESP32 nhận lệnh, điều khiển chân GPIO tương ứng và publish trạng thái thực tế lên `esp32/led/<id>/status`.
+3. Backend theo dõi topic `esp32/led/<id>/status`:
+   - Nếu trạng thái khớp với trạng thái yêu cầu trước thời hạn timeout ➔ Xác nhận lệnh thành công (`SUCCESS`).
+   - Nếu quá thời hạn timeout mà không nhận được trạng thái ➔ Đánh dấu lệnh thất bại (`FAILED`).
 
 ## Lưu ý trước khi triển khai production
 
