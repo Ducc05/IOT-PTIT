@@ -60,7 +60,7 @@ const sortOptions = computed(() => {
           </template>
           <template v-else>
             <div v-if="column === 'device'" class="device-cell"><img v-if="isLedDevice(row.device)" :src="ledIcon" width="12" height="15" alt="" aria-hidden="true" /><div class="name-cell"><strong>{{ row.device.name }}</strong></div></div>
-            <span v-if="column === 'user'" class="user-cell"><img :src="userIcon" width="11" height="11" alt="" aria-hidden="true" />{{ row.user?.username || '—' }}</span>
+            <span v-if="column === 'user'" class="user-cell"><img :src="userIcon" width="11" height="11" alt="" aria-hidden="true" />{{ row.user || '—' }}</span>
             <span v-if="column === 'action'" class="action-badge">{{ row.action }}</span>
             <StatusBadge v-if="column === 'status'" :status="row.status" :title="row.error_message || row.command_id" />
           </template>

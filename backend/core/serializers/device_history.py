@@ -1,30 +1,41 @@
 import json
+from datetime import timedelta
 
 from django.conf import settings
 from django_celery_results.models import TaskResult
-from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from core.models import DeviceHistory
-from core.serializers.common import DeviceReferenceSerializer, UserReferenceSerializer
-from core.serializers.device import device_key
+from core.serializers.device import SimpleDeviceSerializer
 
 
 class DeviceHistorySerializer(serializers.ModelSerializer):
-    device = serializers.SerializerMethodField()
-    user = serializers.SerializerMethodField()
+    device = SimpleDeviceSerializer(read_only=True)
+    user = serializers.CharField(source="user.username", read_only=True)
     command_id = serializers.CharField(source="pk", read_only=True)
-    requested_state = serializers.SerializerMethodField()
-    actual_state = serializers.SerializerMethodField()
+    requested_state = serializers.ChoiceField(
+        choices=["ON", "OFF"], read_only=True, default=None
+    )
+    actual_state = serializers.ChoiceField(
+        choices=["ON", "OFF"], read_only=True, allow_null=True, default=None
+    )
     current_state = serializers.CharField(source="device.current_state", read_only=True)
-    state_confirmed_at = serializers.SerializerMethodField()
-    expires_at = serializers.SerializerMethodField()
-    completed_at = serializers.SerializerMethodField()
-    reported_at = serializers.SerializerMethodField()
-    late_response = serializers.SerializerMethodField()
-    error_code = serializers.SerializerMethodField()
-    error_message = serializers.SerializerMethodField()
-    status_url = serializers.SerializerMethodField()
+    state_confirmed_at = serializers.DateTimeField(
+        read_only=True, allow_null=True, default=None
+    )
+    expires_at = serializers.DateTimeField(read_only=True, default=None)
+    completed_at = serializers.DateTimeField(
+        read_only=True, allow_null=True, default=None
+    )
+    reported_at = serializers.DateTimeField(
+        read_only=True, allow_null=True, default=None
+    )
+    late_response = serializers.BooleanField(
+        read_only=True, allow_null=True, default=None
+    )
+    error_code = serializers.CharField(read_only=True, allow_null=True, default=None)
+    error_message = serializers.CharField(read_only=True, allow_null=True, default=None)
+    status_url = serializers.CharField(read_only=True, default=None)
 
     class Meta:
         model = DeviceHistory
@@ -51,22 +62,6 @@ class DeviceHistorySerializer(serializers.ModelSerializer):
         )
         read_only_fields = fields
 
-    @extend_schema_field(DeviceReferenceSerializer)
-    def get_device(self, obj):
-        return {
-            "id": obj.device_id,
-            "name": obj.device.name,
-            "device_code": device_key(obj.device),
-        }
-
-    @extend_schema_field(UserReferenceSerializer)
-    def get_user(self, obj):
-        return {"id": obj.user_id, "username": obj.user.username}
-
-    @extend_schema_field(serializers.ChoiceField(choices=["ON", "OFF"]))
-    def get_requested_state(self, obj):
-        return "ON" if obj.action == "TURN_ON" else "OFF"
-
     def _task_result(self, obj):
         if "_mqtt_control_results" not in self.context:
             result_map = {}
@@ -84,56 +79,21 @@ class DeviceHistorySerializer(serializers.ModelSerializer):
             self.context["_mqtt_control_results"] = result_map
         return self.context["_mqtt_control_results"].get(obj.pk, {})
 
-    @extend_schema_field(
-        serializers.ChoiceField(choices=["ON", "OFF"], allow_null=True)
-    )
-    def get_actual_state(self, obj):
-        return self._task_result(obj).get("actual_state")
-
-    @extend_schema_field(serializers.DateTimeField(allow_null=True))
-    def get_state_confirmed_at(self, obj):
-        return None
-
-    @extend_schema_field(serializers.DateTimeField())
-    def get_expires_at(self, obj):
-        from datetime import timedelta
-
-        return obj.created_at + timedelta(seconds=settings.MQTT_COMMAND_TIMEOUT_SECONDS)
-
-    @extend_schema_field(serializers.DateTimeField(allow_null=True))
-    def get_completed_at(self, obj):
-        return obj.updated_at if obj.status != "PENDING" else None
-
-    @extend_schema_field(serializers.DateTimeField(allow_null=True))
-    def get_reported_at(self, obj):
-        return None
-
-    @extend_schema_field(serializers.BooleanField(allow_null=True))
-    def get_late_response(self, obj):
-        return None
-
-    @extend_schema_field(serializers.CharField(allow_null=True))
-    def get_error_code(self, obj):
-        return (
-            (
-                self._task_result(obj).get("error")
-                or self._task_result(obj).get("reason")
-                or "DEVICE_COMMAND_FAILED"
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        result = self._task_result(instance)
+        data["requested_state"] = "ON" if instance.action == "TURN_ON" else "OFF"
+        data["actual_state"] = result.get("actual_state")
+        data["expires_at"] = self.fields["expires_at"].to_representation(
+            instance.created_at + timedelta(seconds=settings.MQTT_COMMAND_TIMEOUT_SECONDS)
+        )
+        if instance.status != "PENDING":
+            data["completed_at"] = self.fields["completed_at"].to_representation(
+                instance.updated_at
             )
-            if obj.status == "FAILED"
-            else None
-        )
-
-    @extend_schema_field(serializers.CharField(allow_null=True))
-    def get_error_message(self, obj):
-        return (
-            self._task_result(obj).get("error")
-            or self._task_result(obj).get("reason")
-            or "Command failed or its response was not confirmed."
-            if obj.status == "FAILED"
-            else None
-        )
-
-    @extend_schema_field(serializers.CharField())
-    def get_status_url(self, obj):
-        return f"/api/v1/device-history/{obj.pk}/"
+        if instance.status == "FAILED":
+            error = result.get("error") or result.get("reason")
+            data["error_code"] = error or "DEVICE_COMMAND_FAILED"
+            data["error_message"] = error or "Command failed or its response was not confirmed."
+        data["status_url"] = f"/api/v1/device-history/{instance.pk}/"
+        return data

@@ -1,6 +1,7 @@
+from datetime import timedelta
+
 from django.conf import settings
 from django.db import transaction
-from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
 
@@ -16,13 +17,37 @@ def device_key(device):
     return device.name if device.name in ("LED1", "LED2") else None
 
 
+class SimpleDeviceSerializer(serializers.ModelSerializer):
+    device_code = serializers.CharField(read_only=True, allow_null=True, default=None)
+
+    class Meta:
+        model = Device
+        fields = ("id", "name", "device_code")
+        read_only_fields = fields
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data["device_code"] = device_key(instance)
+        return data
+
+
 class DeviceSerializer(StrictModelSerializer):
-    device_code = serializers.SerializerMethodField()
-    controller_id = serializers.SerializerMethodField()
-    type = serializers.SerializerMethodField()
-    state_confirmed_at = serializers.SerializerMethodField()
-    availability = serializers.SerializerMethodField()
-    pending_command = serializers.SerializerMethodField()
+    device_code = serializers.CharField(read_only=True, allow_null=True, default=None)
+    controller_id = serializers.CharField(read_only=True, allow_null=True, default=None)
+    type = serializers.ChoiceField(
+        choices=["LIGHT", "OTHER"], read_only=True, default="OTHER"
+    )
+    state_confirmed_at = serializers.DateTimeField(
+        read_only=True, allow_null=True, default=None
+    )
+    availability = serializers.ChoiceField(
+        choices=["ONLINE", "OFFLINE", "UNKNOWN"],
+        read_only=True,
+        default="UNKNOWN",
+    )
+    pending_command = PendingCommandSerializer(
+        read_only=True, allow_null=True, default=None
+    )
 
     class Meta:
         model = Device
@@ -53,62 +78,45 @@ class DeviceSerializer(StrictModelSerializer):
             )
         return attrs
 
-    @extend_schema_field(serializers.CharField(allow_null=True))
-    def get_device_code(self, obj):
-        return device_key(obj)
-
-    @extend_schema_field(serializers.CharField(allow_null=True))
-    def get_controller_id(self, obj):
-        return "ESP32" if device_key(obj) else None
-
-    @extend_schema_field(serializers.ChoiceField(choices=["LIGHT", "OTHER"]))
-    def get_type(self, obj):
-        return "LIGHT" if device_key(obj) else "OTHER"
-
-    @extend_schema_field(serializers.DateTimeField(allow_null=True))
-    def get_state_confirmed_at(self, obj):
-        key = device_key(obj)
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        key = device_key(instance)
+        data["device_code"] = key
+        data["controller_id"] = "ESP32" if key else None
+        data["type"] = "LIGHT" if key else "OTHER"
         observation = (
             self.context.get("mqtt_health", {}).get("device_states", {}).get(key)
         )
         if (
             observation
             and not observation["retained"]
-            and observation["state"] == obj.current_state
+            and observation["state"] == instance.current_state
         ):
-            return observation["received_at"]
-        # The model has no confirmed-at field; updated_at changes on rename.
-        return None
-
-    @extend_schema_field(
-        serializers.ChoiceField(choices=["ONLINE", "OFFLINE", "UNKNOWN"])
-    )
-    def get_availability(self, obj):
-        return (
+            data["state_confirmed_at"] = self.fields[
+                "state_confirmed_at"
+            ].to_representation(observation["received_at"])
+        data["availability"] = (
             self.context.get("mqtt_health", {}).get("device_availability", "UNKNOWN")
-            if device_key(obj)
+            if key
             else "UNKNOWN"
         )
-
-    @extend_schema_field(PendingCommandSerializer(allow_null=True))
-    def get_pending_command(self, obj):
-        commands = getattr(obj, "pending_histories", None)
+        commands = getattr(instance, "pending_histories", None)
         pending = (
             next(iter(commands), None)
             if commands is not None
-            else obj.histories.filter(status="PENDING").order_by("pk").first()
+            else instance.histories.filter(status="PENDING").order_by("pk").first()
         )
-        if pending is None:
-            return None
-        from datetime import timedelta
-
-        return {
-            "command_id": str(pending.pk),
-            "requested_state": "ON" if pending.action == "TURN_ON" else "OFF",
-            "expires_at": pending.created_at
-            + timedelta(seconds=settings.MQTT_COMMAND_TIMEOUT_SECONDS),
-            "status_url": f"/api/v1/device-history/{pending.pk}/",
-        }
+        if pending is not None:
+            data["pending_command"] = self.fields["pending_command"].to_representation(
+                {
+                    "command_id": str(pending.pk),
+                    "requested_state": "ON" if pending.action == "TURN_ON" else "OFF",
+                    "expires_at": pending.created_at
+                    + timedelta(seconds=settings.MQTT_COMMAND_TIMEOUT_SECONDS),
+                    "status_url": f"/api/v1/device-history/{pending.pk}/",
+                }
+            )
+        return data
 
     @classmethod
     def mqtt_health(cls):

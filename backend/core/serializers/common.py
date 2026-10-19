@@ -55,12 +55,6 @@ class StrictModelSerializer(serializers.ModelSerializer):
         return super().to_internal_value(data)
 
 
-class DeviceReferenceSerializer(serializers.Serializer):
-    id = serializers.IntegerField()
-    name = serializers.CharField()
-    device_code = serializers.CharField(allow_null=True)
-
-
 class UserReferenceSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     username = serializers.CharField()

@@ -27,7 +27,7 @@ function commandFor(device: Device, action: ControlRequest['action'], id: number
   const command_id = crypto.randomUUID()
   const requested_state = action === 'TURN_ON' ? 'ON' : 'OFF'
   return {
-    id, command_id, device: { id: device.id, device_code: device.device_code, name: device.name }, user: { username },
+    id, command_id, device: { id: device.id, device_code: device.device_code, name: device.name }, user: username,
     action, requested_state, actual_state: status === 'SUCCESS' ? requested_state : null,
     current_state: device.current_state, state_confirmed_at: device.state_confirmed_at,
     status, error_code: status === 'FAILED' ? 'DEVICE_ERROR' : status === 'TIMEOUT' ? 'DEVICE_COMMAND_TIMEOUT' : null,
@@ -63,7 +63,7 @@ export function createMockApi(options: { latency?: number; persist?: boolean } =
   } catch { /* Storage may be unavailable; the in-memory backend still works. */ }
   // Upgrade existing mock records without replacing readings or command state.
   db.history.forEach(command => {
-    if (command.user === undefined) command.user = { username: mockUsers[(command.id - 1) % mockUsers.length] }
+    if (command.user === undefined) command.user = mockUsers[(command.id - 1) % mockUsers.length]
   })
   function save() { try { if (persist) localStorage.setItem(STORAGE_KEY, JSON.stringify(db)) } catch { /* Memory fallback. */ } }
   function sync() {

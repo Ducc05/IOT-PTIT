@@ -29,7 +29,7 @@ export interface SensorDataRow {
 export interface SensorRegistryRow { id: number; name: string; type: SensorType; unit: string; status: 'ACTIVE' | 'INACTIVE' }
 export interface CommandResource {
   id: number; command_id: string; device: { id: number; device_code: string; name: string }
-  user?: { username: string } | null
+  user: string
   action: DeviceAction; requested_state: 'ON' | 'OFF'; actual_state: DeviceState; current_state: DeviceState
   state_confirmed_at: string | null; status: CommandStatus; error_code: string | null; error_message: string | null
   late_response: boolean | null; created_at: string; expires_at: string; completed_at: string | null

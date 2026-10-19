@@ -1,4 +1,3 @@
-from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from core.models import SensorData
@@ -9,7 +8,10 @@ class SensorDataSerializer(serializers.ModelSerializer):
     sensor = SensorSerializer(read_only=True)
     type = serializers.CharField(source="sensor.type", read_only=True)
     unit = serializers.CharField(source="sensor.unit", read_only=True)
-    measured_at = serializers.SerializerMethodField()
+    # Firmware does not publish a measurement timestamp separate from ingestion.
+    measured_at = serializers.DateTimeField(
+        read_only=True, allow_null=True, default=None
+    )
 
     class Meta:
         model = SensorData
@@ -24,8 +26,3 @@ class SensorDataSerializer(serializers.ModelSerializer):
             "updated_at",
         )
         read_only_fields = fields
-
-    @extend_schema_field(serializers.DateTimeField(allow_null=True))
-    def get_measured_at(self, obj):
-        # Firmware publishes no timestamp; never invent a device measurement time.
-        return None
