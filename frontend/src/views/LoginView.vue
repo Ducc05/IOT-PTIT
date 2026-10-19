@@ -2,7 +2,6 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { auth } from '../api/auth'
-import AppIcon from '../components/common/AppIcon.vue'
 import brandLogo from '../assets/iot-logo.svg'
 import { ApiError } from '../types/api'
 import { errorMessage } from '../utils/format'
@@ -54,35 +53,16 @@ async function submit() {
 
 <template>
   <div class="auth-screen">
-    <aside class="auth-promo" aria-label="IoT Monitoring">
-      <div class="auth-promo-inner">
-        <RouterLink class="auth-brand" to="/login">
-          <span class="auth-brand-mark"><img :src="brandLogo" width="26" height="20" alt="" /></span>
-          <span>IoT Monitoring</span>
-        </RouterLink>
-        <div class="auth-promo-copy">
-          <span class="auth-eyebrow">YOUR CONNECTED SPACE</span>
-          <h2>Stay close to every signal.</h2>
-          <p>See sensor readings, follow device activity, and send controls from one secure workspace.</p>
-        </div>
-        <div class="auth-visual" aria-hidden="true">
-          <div class="auth-visual-ring ring-one" />
-          <div class="auth-visual-ring ring-two" />
-          <span class="auth-visual-center"><AppIcon name="activity" :size="36" /></span>
-          <span class="auth-visual-node node-one"><AppIcon name="temperature" :size="23" /></span>
-          <span class="auth-visual-node node-two"><AppIcon name="wifi" :size="22" /></span>
-          <span class="auth-visual-node node-three"><AppIcon name="light" :size="23" /></span>
-        </div>
-        <p class="auth-promo-foot">Sensors · Devices · History</p>
-      </div>
-    </aside>
-
     <main id="main-content" class="auth-main">
-      <div class="auth-form-shell">
-        <div class="auth-mobile-brand"><span class="auth-brand-mark"><img :src="brandLogo" width="23" height="18" alt="" /></span> IoT Monitoring</div>
-        <span class="auth-form-eyebrow">WELCOME TO IOT MONITORING</span>
-        <h1>{{ isRegister ? 'Create your account' : 'Welcome back' }}</h1>
-        <p class="auth-intro">{{ isRegister ? 'Sign up to start monitoring your environment.' : 'Sign in to access your dashboard and devices.' }}</p>
+      <div class="auth-card">
+        <div class="auth-header">
+          <RouterLink class="auth-brand" to="/login">
+            <span class="auth-brand-mark"><img :src="brandLogo" width="22" height="18" alt="" /></span>
+            <span>IoT Monitoring</span>
+          </RouterLink>
+          <h1>{{ isRegister ? 'Create your account' : 'Welcome back' }}</h1>
+          <p class="auth-intro">{{ isRegister ? 'Sign up to start monitoring your environment.' : 'Sign in to access your dashboard and devices.' }}</p>
+        </div>
 
         <nav class="auth-tabs" aria-label="Account access">
           <RouterLink :to="{ name: 'login', query: redirectQuery }" :class="{ active: !isRegister }" :aria-current="!isRegister ? 'page' : undefined">Sign in</RouterLink>
@@ -96,7 +76,7 @@ async function submit() {
           <label v-if="isRegister" class="auth-field"><span>Confirm password</span><input v-model="passwordConfirm" name="password_confirm" type="password" autocomplete="new-password" placeholder="Enter your password again" required /></label>
           <p v-if="isRegister" class="auth-help">Use at least 8 characters. Avoid common passwords.</p>
           <p v-if="error" class="auth-error" role="alert">{{ error }}</p>
-          <button class="auth-submit" type="submit" :disabled="loading">{{ loading ? (isRegister ? 'Creating account…' : 'Signing in…') : (isRegister ? 'Create account' : 'Sign in') }}<AppIcon name="right" :size="18" /></button>
+          <button class="auth-submit" type="submit" :disabled="loading">{{ loading ? (isRegister ? 'Creating account…' : 'Signing in…') : (isRegister ? 'Create account' : 'Sign in') }}</button>
         </form>
         <p class="auth-switch">{{ isRegister ? 'Already have an account?' : 'New to IoT Monitoring?' }} <RouterLink :to="{ name: isRegister ? 'login' : 'register', query: redirectQuery }">{{ isRegister ? 'Sign in' : 'Create an account' }}</RouterLink></p>
       </div>
