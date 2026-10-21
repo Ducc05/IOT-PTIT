@@ -48,7 +48,7 @@ export function useDeviceControls(devices: ShallowRef<Device[] | null>, refresh:
     } catch (cause) {
       if (!signal.aborted) {
         if (cause instanceof ApiError && cause.status >= 400 && cause.status < 500 && cause.code !== 'DEVICE_COMMAND_IN_PROGRESS') {
-          errors.value[id] = cause.message; store.clear(id)
+          errors.value[id] = cause.message; store.clear(id); terminal = true
         } else if (cause instanceof ApiError && cause.code === 'DEVICE_COMMAND_IN_PROGRESS' && typeof cause.details.command_id === 'string') {
           store.set(id, { ...store.controls[id], commandId: cause.details.command_id, phase: 'reconciling', message: 'Another command is processing. Check its result.' })
         } else if (store.controls[id]) {
@@ -61,7 +61,7 @@ export function useDeviceControls(devices: ShallowRef<Device[] | null>, refresh:
     }
   }
   function control(device: Device, action: DeviceAction) {
-    if (store.controls[device.id] || device.pending_command) return
+    if (device.availability !== 'ONLINE' || store.controls[device.id] || device.pending_command) return
     delete errors.value[device.id]
     store.set(device.id, { action, key: `ui-${crypto.randomUUID()}`, commandId: null, phase: 'pending', message: '' })
     void track(device.id)

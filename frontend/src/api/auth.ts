@@ -2,8 +2,8 @@ import { shallowRef } from 'vue'
 import { environment } from '../config/environment'
 import { ApiError } from '../types/api'
 
-interface Session { username: string; email: string; full_name: string; student_id: string | null; access: string; refresh: string }
-interface CurrentUser { id: number; username: string; email: string; full_name: string; student_id: string | null }
+interface Session { username: string; email: string; full_name: string; student_id: string | null; avatar: string | null; access: string; refresh: string }
+interface CurrentUser { id: number; username: string; email: string; full_name: string; student_id: string | null; avatar: string | null }
 interface TokenPair { access: string; refresh?: string; username?: string; email?: string }
 interface ProfileUpdate { full_name: string; student_id: string | null; email?: string }
 
@@ -16,7 +16,7 @@ function storedSession(): Session | null {
   try {
     const value = JSON.parse(sessionStorage.getItem(storageKey) || 'null')
     return value && typeof value.username === 'string' && typeof value.access === 'string' && typeof value.refresh === 'string'
-      ? { username: value.username, email: typeof value.email === 'string' ? value.email : '', full_name: typeof value.full_name === 'string' ? value.full_name : '', student_id: typeof value.student_id === 'string' ? value.student_id : null, access: value.access, refresh: value.refresh }
+      ? { username: value.username, email: typeof value.email === 'string' ? value.email : '', full_name: typeof value.full_name === 'string' ? value.full_name : '', student_id: typeof value.student_id === 'string' ? value.student_id : null, avatar: typeof value.avatar === 'string' ? value.avatar : null, access: value.access, refresh: value.refresh }
       : null
   } catch { return null }
 }
@@ -68,13 +68,13 @@ export const auth = {
     const data = await postJson('/api/auth/token/', { username, password }, signal)
     if (!data.access || !data.refresh) throw new ApiError('AUTHENTICATION_REQUIRED', 'Invalid token response.')
     const user = await currentUser(data.access, signal)
-    save({ username: user.username, email: user.email, full_name: user.full_name || '', student_id: user.student_id || null, access: data.access, refresh: data.refresh })
+    save({ username: user.username, email: user.email, full_name: user.full_name || '', student_id: user.student_id || null, avatar: user.avatar || null, access: data.access, refresh: data.refresh })
     verifiedAccess = data.access
   },
   async register(username: string, email: string, password: string, passwordConfirm: string, signal?: AbortSignal) {
     const data = await postJson('/api/auth/register/', { username, email, password, password_confirm: passwordConfirm }, signal)
     if (!data.access || !data.refresh || !data.username) throw new ApiError('AUTHENTICATION_REQUIRED', 'Invalid registration response.')
-    save({ username: data.username, email: data.email || '', full_name: '', student_id: null, access: data.access, refresh: data.refresh })
+    save({ username: data.username, email: data.email || '', full_name: '', student_id: null, avatar: null, access: data.access, refresh: data.refresh })
     verifiedAccess = data.access
   },
   async refresh(): Promise<string | null> {
@@ -106,19 +106,19 @@ export const auth = {
         user = await currentUser(access)
       }
       if (!session.value) return false
-      save({ ...session.value, username: user.username, email: user.email, full_name: user.full_name || '', student_id: user.student_id || null })
+      save({ ...session.value, username: user.username, email: user.email, full_name: user.full_name || '', student_id: user.student_id || null, avatar: user.avatar || null })
       verifiedAccess = access
       return true
     } catch { save(null); return false }
   },
-  async updateProfile(values: ProfileUpdate): Promise<CurrentUser> {
+  async updateProfile(values: ProfileUpdate | FormData): Promise<CurrentUser> {
     if (!session.value) throw new ApiError('AUTHENTICATION_REQUIRED', 'Sign in to continue.', 401)
     async function send(access: string) {
       try {
         return await fetch(`${authBase}/api/auth/me/`, {
           method: 'PATCH', cache: 'no-store', signal: AbortSignal.timeout(12000),
-          headers: { Accept: 'application/json', 'Content-Type': 'application/json', Authorization: `Bearer ${access}` },
-          body: JSON.stringify(values),
+          headers: { Accept: 'application/json', ...(values instanceof FormData ? {} : { 'Content-Type': 'application/json' }), Authorization: `Bearer ${access}` },
+          body: values instanceof FormData ? values : JSON.stringify(values),
         })
       } catch { throw new ApiError('NETWORK_ERROR', 'Cannot reach the backend.') }
     }
@@ -135,7 +135,7 @@ export const auth = {
     if (!response.ok) throw requestError(response, data, 'Unable to update your profile.')
     if (!session.value) throw new ApiError('AUTHENTICATION_REQUIRED', 'Sign in to continue.', 401)
     const user = data as CurrentUser
-    save({ ...session.value, username: user.username, email: user.email, full_name: user.full_name || '', student_id: user.student_id || null })
+    save({ ...session.value, username: user.username, email: user.email, full_name: user.full_name || '', student_id: user.student_id || null, avatar: user.avatar || null })
     verifiedAccess = access
     return user
   },

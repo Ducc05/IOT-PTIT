@@ -9,6 +9,7 @@ import paho.mqtt.client as mqtt
 from django.conf import settings
 from django.db import close_old_connections, connection
 from django.test import TransactionTestCase
+from django_celery_results.models import TaskResult
 from rest_framework.test import APIClient
 
 from core.models import Device, DeviceHistory, Sensor, SensorData, User
@@ -55,6 +56,23 @@ class MQTTIntegrationTests(TransactionTestCase):
         info = self.publisher.publish(topic, json.dumps(data), qos=0, retain=retain)
         info.wait_for_publish(timeout=2)
 
+    def confirm_connection(self):
+        self.publish(
+            "esp32/sensor/data",
+            {"success": True, "temperature": 23, "humidity": 65, "light": 100},
+        )
+        self.wait(lambda: len(self.reader.messages) >= 1)
+        result = self.reader.drain()
+        self.assertEqual(result["health"]["device_availability"], "ONLINE")
+        TaskResult.objects.create(
+            task_id="integration-mqtt-health",
+            task_name="core.tasks.read_mqtt_data",
+            status="SUCCESS",
+            result=json.dumps(result),
+            content_type="application/json",
+            content_encoding="utf-8",
+        )
+
     def test_subscription_stays_live_between_task_runs(self):
         client_id = self.reader.client
         self.publish(
@@ -79,12 +97,13 @@ class MQTTIntegrationTests(TransactionTestCase):
         )
 
     def test_real_gpio_response_confirms_api_command(self):
+        self.confirm_connection()
         history = DeviceHistory.objects.create(
             device=self.device, user=self.user, action="TURN_ON"
         )
 
         def callback(client, userdata, message):
-            if message.topic != "esp32/led1/control":
+            if message.topic != "esp32/led/1/control":
                 return
             state = message.payload.decode()
             client.publish(
@@ -113,6 +132,7 @@ class MQTTIntegrationTests(TransactionTestCase):
         other.stop()
 
     def test_concurrent_control_requests_create_one_pending(self):
+        self.confirm_connection()
         barrier = threading.Barrier(2)
         results = []
         errors = []
@@ -148,6 +168,7 @@ class MQTTIntegrationTests(TransactionTestCase):
         self.assertEqual(DeviceHistory.objects.filter(status="PENDING").count(), 1)
 
     def test_concurrent_same_key_replays_one_command(self):
+        self.confirm_connection()
         barrier = threading.Barrier(2)
         responses = []
         errors = []

@@ -45,7 +45,7 @@ it('updates the current profile with the refreshed JWT and keeps the saved field
     .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ access: 'new-access' }) })
     .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ id: 1, username: 'operator', email: 'updated@example.com', full_name: 'Nguyễn Văn A', student_id: 'B23DCCN193' }) })
   vi.stubGlobal('fetch', fetch)
-  auth.session.value = { username: 'operator', email: 'operator@example.com', full_name: '', student_id: null, access: 'old-access', refresh: 'refresh-token' }
+  auth.session.value = { username: 'operator', email: 'operator@example.com', full_name: '', student_id: null, avatar: null, access: 'old-access', refresh: 'refresh-token' }
   await auth.updateProfile({ full_name: 'Nguyễn Văn A', student_id: 'B23DCCN193', email: 'updated@example.com' })
   expect(fetch.mock.calls[0][0]).toBe('http://localhost:8000/api/auth/me/')
   expect(fetch.mock.calls[0][1].method).toBe('PATCH')
@@ -54,12 +54,28 @@ it('updates the current profile with the refreshed JWT and keeps the saved field
   expect(fetch.mock.calls[2][1].body).toBe(fetch.mock.calls[0][1].body)
   expect(auth.session.value).toMatchObject({ full_name: 'Nguyễn Văn A', student_id: 'B23DCCN193', email: 'updated@example.com', access: 'new-access' })
 })
+it('uploads one avatar as multipart and retries with a refreshed JWT', async () => {
+  const fetch = vi.fn()
+    .mockResolvedValueOnce({ ok: false, status: 401, json: async () => ({ detail: 'Expired.' }) })
+    .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ access: 'new-access' }) })
+    .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ id: 1, username: 'operator', email: '', full_name: 'Operator', student_id: null, avatar: 'http://localhost:8000/media/avatars/new.png' }) })
+  vi.stubGlobal('fetch', fetch)
+  auth.session.value = { username: 'operator', email: '', full_name: 'Operator', student_id: null, avatar: null, access: 'old-access', refresh: 'refresh-token' }
+  const body = new FormData()
+  body.append('avatar', new File(['image'], 'avatar.png', { type: 'image/png' }))
+  await auth.updateProfile(body)
+  expect(fetch.mock.calls[0][1].body).toBe(body)
+  expect(fetch.mock.calls[0][1].headers['Content-Type']).toBeUndefined()
+  expect(fetch.mock.calls[2][1].body).toBe(body)
+  expect(fetch.mock.calls[2][1].headers.Authorization).toBe('Bearer new-access')
+  expect(auth.session.value?.avatar).toBe('http://localhost:8000/media/avatars/new.png')
+})
 it('loads all device pages and exposes backend errors', async () => {
   const fetch = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ results: [{ id: 1 }], next: '/api/v1/devices/?page=2' }) })
     .mockResolvedValueOnce({ ok: true, json: async () => ({ results: [{ id: 2 }], next: null }) })
     .mockResolvedValueOnce({ ok: false, status: 400, json: async () => ({ error: { code: 'INVALID_DATE_RANGE', message: 'Invalid dates.', details: {} } }) })
   vi.stubGlobal('fetch', fetch)
-  auth.session.value = { username: 'operator', email: '', full_name: '', student_id: null, access: 'access-token', refresh: 'refresh-token' }
+  auth.session.value = { username: 'operator', email: '', full_name: '', student_id: null, avatar: null, access: 'access-token', refresh: 'refresh-token' }
   const api = createHttpApi('http://localhost:8000/api/v1')
   expect(await api.devices()).toEqual([{ id: 1 }, { id: 2 }])
   expect(fetch.mock.calls[1][0]).toContain('limit=100&offset=100')
@@ -68,7 +84,7 @@ it('loads all device pages and exposes backend errors', async () => {
 it('serializes an exact measured value including zero', async () => {
   const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ count: 0, next: null, previous: null, results: [] }) })
   vi.stubGlobal('fetch', fetch)
-  auth.session.value = { username: 'operator', email: '', full_name: '', student_id: null, access: 'access-token', refresh: 'refresh-token' }
+  auth.session.value = { username: 'operator', email: '', full_name: '', student_id: null, avatar: null, access: 'access-token', refresh: 'refresh-token' }
   await createHttpApi('http://localhost:8000/api/v1').sensorData({ type: 'TEMPERATURE', value: 0, page: 1, page_size: 10 })
   expect(fetch.mock.calls[0][0]).toBe('http://localhost:8000/api/v1/sensor-data/?type=TEMPERATURE&value=0&limit=10&offset=0')
 })

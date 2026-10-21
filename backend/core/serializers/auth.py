@@ -1,4 +1,5 @@
 from typing import ClassVar
+from uuid import uuid4
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
@@ -47,21 +48,32 @@ class RegistrationSerializer(StrictModelSerializer):
 class CurrentUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ("id", "username", "email", "full_name", "student_id")
+        fields = ("id", "username", "email", "full_name", "student_id", "avatar")
         read_only_fields = fields
 
 
 class CurrentUserUpdateSerializer(StrictModelSerializer):
     email = serializers.EmailField(required=False, allow_blank=True)
+    avatar = serializers.ImageField(required=False)
 
     class Meta:
         model = User
-        fields = ("full_name", "student_id", "email")
+        fields = ("full_name", "student_id", "email", "avatar")
         extra_kwargs: ClassVar[dict[str, dict[str, bool]]] = {
             "full_name": {"required": False, "allow_blank": False},
             "student_id": {"required": False, "allow_blank": False, "allow_null": True},
             "email": {"required": False, "allow_blank": True},
         }
+
+    def validate_avatar(self, value):
+        if value.size > 5 * 1024 * 1024:
+            raise serializers.ValidationError("Ảnh đại diện không được vượt quá 5 MB.")
+        extensions = {"JPEG": "jpg", "PNG": "png", "WEBP": "webp"}
+        extension = extensions.get(value.image.format)
+        if extension is None:
+            raise serializers.ValidationError("Vui lòng chọn ảnh JPG, PNG hoặc WebP.")
+        value.name = f"{uuid4().hex}.{extension}"
+        return value
 
     def update(self, instance, validated_data):
         try:

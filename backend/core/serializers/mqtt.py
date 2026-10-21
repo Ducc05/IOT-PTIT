@@ -16,7 +16,7 @@ from core.serializers.common import (
 )
 from core.serializers.device import device_key
 from core.serializers.device_history import DeviceHistorySerializer
-from core.serializers.query import advisory_transaction_lock
+from core.serializers.query import advisory_transaction_lock, mqtt_health
 
 SENSOR_FIELDS = {
     "temperature": ("TEMPERATURE", "°C"),
@@ -248,6 +248,18 @@ class DeviceControlSerializer(StrictSerializer):
                                 "command_id": str(pending.pk),
                                 "status_url": f"/api/v1/device-history/{pending.pk}/",
                             },
+                        }
+                    },
+                    "status": 409,
+                }
+            availability = mqtt_health().get("device_availability", "UNKNOWN")
+            if availability != "ONLINE":
+                return {
+                    "data": {
+                        "error": {
+                            "code": "DEVICE_NOT_CONNECTED",
+                            "message": "ESP32 is not connected; device control is disabled.",
+                            "details": {"availability": availability},
                         }
                     },
                     "status": 409,

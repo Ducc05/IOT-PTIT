@@ -188,6 +188,12 @@ tbody tr:hover { background: #ffffff; }
 .profile-body { display: flex; align-items: center; padding: 28px; gap: 28px; }
 .profile-avatar { display: flex; align-items: center; justify-content: center; width: 120px; height: 120px; flex-shrink: 0; overflow: hidden; border: 4px solid #f5f7ff; border-radius: 50%; background: white; color: #0b1c30; }
 .profile-avatar img, .profile-avatar svg { display: block; width: 100%; height: 100%; object-fit: cover; }
+.profile-avatar-section { display: flex; flex-direction: column; align-items: center; gap: 6px; max-width: 150px; flex-shrink: 0; }
+button.profile-avatar { position: relative; padding: 0; cursor: pointer; }
+button.profile-avatar:focus-visible { outline: 3px solid var(--brand); outline-offset: 3px; }
+button.profile-avatar:disabled { cursor: wait; opacity: .7; }
+.profile-avatar-overlay { position: absolute; bottom: 0; left: 0; width: 100%; padding: 5px 0 7px; background: #0b1c3099; color: white; font-size: 10px; text-align: center; }
+.profile-avatar-error { color: #b91c1c; font-size: 11px; text-align: center; overflow-wrap: anywhere; }
 .profile-details { flex: 1; min-width: 0; }
 .profile-details h2 { font-size: 23px; font-weight: 700; }
 .profile-name-button { display: inline-flex; align-items: baseline; gap: 12px; max-width: 100%; border: 0; padding: 0; background: none; color: inherit; font: inherit; font-weight: inherit; text-align: left; }

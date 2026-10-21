@@ -13,6 +13,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.test import APIClient
 
 from core.models import Device, DeviceHistory, Sensor, SensorData, User
+from core.serializers.device import DeviceSerializer
 from core.serializers.mqtt import SensorMQTTSerializer
 from core.tasks import (
     MQTTReader,
@@ -44,6 +45,23 @@ class BackendTests(TestCase):
             "humidity": 67,
             "light": 1234,
         }
+
+    def record_mqtt_health(self, availability="ONLINE", **overrides):
+        health = {
+            "device_availability": availability,
+            "broker_connected": True,
+            "subscriptions_ready": True,
+            "last_sensor_received_at": timezone.now().isoformat(),
+            **overrides,
+        }
+        return TaskResult.objects.create(
+            task_id=f"mqtt-health-{TaskResult.objects.count()}",
+            task_name="core.tasks.read_mqtt_data",
+            status="SUCCESS",
+            result=json.dumps({"health": health}),
+            content_type="application/json",
+            content_encoding="utf-8",
+        )
 
     def save_sensor(self, data=None):
         serializer = SensorMQTTSerializer(data=self.payload(data))
@@ -494,7 +512,178 @@ class BackendTests(TestCase):
             401,
         )
 
+    def test_control_requires_a_fresh_connected_esp32(self):
+        cases = [
+            (None, {}),
+            ("UNKNOWN", {}),
+            ("OFFLINE", {}),
+            ("ONLINE", {"broker_connected": False}),
+            ("ONLINE", {"subscriptions_ready": False}),
+            ("ONLINE", {"last_sensor_received_at": None}),
+            ("ONLINE", {"last_sensor_received_at": "invalid"}),
+            ("ONLINE", {"last_sensor_received_at": "2026-99-99T00:00:00Z"}),
+            ("ONLINE", {"last_sensor_received_at": "2026-10-21T00:00:00"}),
+            (
+                "ONLINE",
+                {
+                    "last_sensor_received_at": (
+                        timezone.now() - timedelta(seconds=16)
+                    ).isoformat()
+                },
+            ),
+        ]
+        with patch("core.tasks.control_device.apply_async") as publish:
+            for availability, overrides in cases:
+                for action in ("TURN_ON", "TURN_OFF"):
+                    with self.subTest(
+                        availability=availability, overrides=overrides, action=action
+                    ):
+                        TaskResult.objects.all().delete()
+                        if availability is not None:
+                            self.record_mqtt_health(availability, **overrides)
+                        response = self.client.post(
+                            f"/api/v1/devices/{self.led1.pk}/control/",
+                            {"action": action, "idempotency_key": "not-connected"},
+                            format="json",
+                        )
+                        self.assertEqual(response.status_code, 409)
+                        self.assertEqual(
+                            response.data["error"]["code"], "DEVICE_NOT_CONNECTED"
+                        )
+                        self.assertEqual(DeviceHistory.objects.count(), 0)
+                        self.assertFalse(
+                            TaskResult.objects.filter(
+                                task_name="core.tasks.control_device"
+                            ).exists()
+                        )
+                        device = self.client.get(f"/api/v1/devices/{self.led1.pk}/")
+                        self.assertNotEqual(device.data["availability"], "ONLINE")
+            publish.assert_not_called()
+        self.led1.refresh_from_db()
+        self.assertEqual(self.led1.current_state, "OFF")
+
+    @override_settings(CELERY_TASK_ALWAYS_EAGER=True)
+    def test_eager_device_availability_uses_live_reader_without_task_results(self):
+        self.reader.connected = self.reader.ready = True
+        self.reader.process(self.item())
+        url = f"/api/v1/devices/{self.led1.pk}/"
+        with patch("core.tasks._reader", self.reader):
+            # The eager background loop calls the task directly, so no TaskResult exists.
+            with self.assertNumQueries(0):
+                health = DeviceSerializer.mqtt_health()
+            self.assertEqual(health["device_availability"], "ONLINE")
+            self.assertEqual(self.client.get(url).data["availability"], "ONLINE")
+
+            self.reader.process(
+                self.item(
+                    "esp32/status",
+                    {
+                        "device": "ESP32",
+                        "status": "OFFLINE",
+                        "reason": "UNEXPECTED_DISCONNECT",
+                    },
+                )
+            )
+            self.assertEqual(self.client.get(url).data["availability"], "OFFLINE")
+
+            self.reader.process(self.item())
+            self.assertEqual(self.client.get(url).data["availability"], "ONLINE")
+            self.reader.last_sensor_at = timezone.now() - timedelta(seconds=16)
+            self.assertNotEqual(self.client.get(url).data["availability"], "ONLINE")
+
+    @override_settings(CELERY_TASK_ALWAYS_EAGER=True)
+    def test_eager_control_uses_live_connection_and_blocks_after_disconnect(self):
+        self.reader.connected = self.reader.ready = True
+        self.reader.process(self.item())
+        url = f"/api/v1/devices/{self.led1.pk}/control/"
+        with (
+            patch("core.tasks._reader", self.reader),
+            patch("core.tasks.control_device.apply_async") as publish,
+            self.captureOnCommitCallbacks(execute=True),
+        ):
+            response = self.client.post(
+                url,
+                {"action": "TURN_ON", "idempotency_key": "eager-online"},
+                format="json",
+            )
+        self.assertEqual(response.status_code, 202)
+        publish.assert_called_once()
+
+        self.reader.connected = self.reader.ready = False
+        with (
+            patch("core.tasks._reader", self.reader),
+            patch("core.tasks.control_device.apply_async") as publish,
+        ):
+            response = self.client.post(
+                f"/api/v1/devices/{self.led2.pk}/control/",
+                {"action": "TURN_ON", "idempotency_key": "eager-offline"},
+                format="json",
+            )
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["error"]["code"], "DEVICE_NOT_CONNECTED")
+        self.assertEqual(DeviceHistory.objects.count(), 1)
+        publish.assert_not_called()
+
+    def test_expired_worker_health_does_not_allow_control(self):
+        report = self.record_mqtt_health()
+        TaskResult.objects.filter(pk=report.pk).update(
+            date_done=timezone.now() - timedelta(seconds=16)
+        )
+        with patch("core.tasks.control_device.apply_async") as publish:
+            response = self.client.post(
+                f"/api/v1/devices/{self.led1.pk}/control/",
+                {"action": "TURN_ON", "idempotency_key": "expired-health"},
+                format="json",
+            )
+        self.assertEqual(response.status_code, 409)
+        self.assertFalse(DeviceHistory.objects.exists())
+        publish.assert_not_called()
+
+    def test_reconnect_allows_previously_rejected_intent(self):
+        url = f"/api/v1/devices/{self.led1.pk}/control/"
+        intent = {"action": "TURN_ON", "idempotency_key": "reconnect"}
+        self.assertEqual(self.client.post(url, intent, format="json").status_code, 409)
+        self.record_mqtt_health()
+        self.assertEqual(
+            self.client.get(url.removesuffix("control/")).data["availability"], "ONLINE"
+        )
+        with (
+            patch("core.tasks.control_device.apply_async") as publish,
+            self.captureOnCommitCallbacks(execute=True),
+        ):
+            response = self.client.post(url, intent, format="json")
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(DeviceHistory.objects.count(), 1)
+        publish.assert_called_once()
+
+    def test_worker_does_not_publish_after_esp32_disconnects(self):
+        for availability in ("UNKNOWN", "OFFLINE", "STALE"):
+            with self.subTest(availability=availability):
+                history = self.command()
+                self.reader.connected = self.reader.ready = True
+                self.reader.last_sensor_at = (
+                    timezone.now() - timedelta(seconds=16)
+                    if availability == "STALE"
+                    else None
+                )
+                self.reader.esp_status = (
+                    "OFFLINE" if availability == "OFFLINE" else None
+                )
+                with (
+                    patch("core.tasks._reader", self.reader),
+                    patch.object(self.reader, "ensure_started", return_value=True),
+                    patch("core.tasks._publish_control") as publish,
+                ):
+                    result = control_device.run(history.pk)
+                self.assertEqual(result["error"], "DEVICE_NOT_CONNECTED")
+                history.refresh_from_db()
+                self.assertEqual(history.status, "FAILED")
+                publish.assert_not_called()
+        self.led1.refresh_from_db()
+        self.assertEqual(self.led1.current_state, "OFF")
+
     def test_control_idempotent_pending_and_conflict(self):
+        self.record_mqtt_health()
         url = f"/api/v1/devices/{self.led1.pk}/control/"
         with patch("core.tasks.control_device.apply_async") as publish:
             with self.captureOnCommitCallbacks(execute=True):
@@ -507,6 +696,8 @@ class BackendTests(TestCase):
             self.assertEqual(DeviceHistory.objects.count(), 1)
             self.assertEqual(DeviceHistory.objects.get().user_id, self.user.pk)
             self.assertEqual(publish.call_count, 1)
+            # A retry reads the existing command even after connectivity is lost.
+            TaskResult.objects.filter(task_name="core.tasks.read_mqtt_data").delete()
             replay = self.client.post(
                 url, {"action": "TURN_ON", "idempotency_key": "intent-1"}, format="json"
             )
@@ -555,6 +746,7 @@ class BackendTests(TestCase):
         self.assertEqual(DeviceHistory.objects.count(), 1)
 
     def test_broker_failure_marks_unconfirmed_command_failed(self):
+        self.record_mqtt_health()
         with (
             patch(
                 "core.tasks.control_device.apply_async",
@@ -582,6 +774,7 @@ class BackendTests(TestCase):
         reader.response = {}
         reader.mutex = __import__("threading").Lock()
         reader.ensure_started.return_value = True
+        reader.health.return_value = {"device_availability": "ONLINE"}
         reader.client.publish.return_value.rc = 0
         with (
             override_settings(MQTT_COMMAND_TIMEOUT_SECONDS=0.1),
@@ -661,6 +854,7 @@ class BackendTests(TestCase):
         self.assertEqual(history.status, "PENDING")
 
     def test_jwt_login_and_authenticated_control_actor(self):
+        self.record_mqtt_health()
         client = APIClient()
         login = client.post(
             "/api/auth/token/",

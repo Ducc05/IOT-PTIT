@@ -50,6 +50,7 @@ tmp/
 logs/
 
 # ---- Environment / secrets ----
+backend/media/
 # Ignore real env files, but KEEP templates (.env.tpl / .env.example / .env.sample).
 .env
 .env.*

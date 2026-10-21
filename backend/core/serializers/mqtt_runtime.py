@@ -313,6 +313,9 @@ class DeviceExecutionSerializer(serializers.Serializer):
             if not (reader.connected and reader.ready):
                 return DeviceExecutionSerializer.finish_control(history_id, result)
             reader.drain()  # Old queued replies must not satisfy a new request.
+            if reader.health()["device_availability"] != "ONLINE":
+                result["error"] = "DEVICE_NOT_CONNECTED"
+                return DeviceExecutionSerializer.finish_control(history_id, result)
             with reader.mutex:
                 sequence = reader.sequence
             reader.expected[key] = {

@@ -69,6 +69,75 @@ test('API switch stays inside its track while turning an unconfirmed LED on and 
   await expectThumbInside(knownSwitch, 1)
 })
 
+for (const availability of ['OFFLINE', 'UNKNOWN', 'STALE'] as const) {
+  test(`API device shows Unconnect and blocks control while ${availability}, then recovers`, async ({ page }) => {
+    await useApiSession(page)
+    const backend = createMockApi({ latency: 0, persist: false })
+    const latest = await backend.sensorLatest()
+    const trends = await backend.sensorTrends()
+    const device: Device = {
+      ...(await backend.devices())[0], name: 'LED1', current_state: 'ON',
+      state_confirmed_at: new Date().toISOString(), availability,
+    }
+    let controlRequests = 0
+    await page.route('http://127.0.0.1:5174/api/v1/**', async route => {
+      const path = new URL(route.request().url()).pathname
+      if (await fulfillDashboardLists(route, latest, trends)) return
+      if (path.endsWith('/devices/')) return route.fulfill({ json: { count: 1, next: null, previous: null, results: [device] } })
+      if (path.endsWith('/control/')) controlRequests++
+      return route.fulfill({ status: 404, json: {} })
+    })
+    await page.goto('http://127.0.0.1:5174/dashboard')
+    const card = page.locator('.device-card')
+    const toggle = card.getByRole('switch')
+    await expect(card.getByText('Unconnect', { exact: true })).toBeVisible()
+    await expect(toggle).toBeDisabled()
+    await expect(toggle).toHaveAttribute('aria-checked', 'mixed')
+    await expect(card).not.toHaveClass(/device-on/)
+    await toggle.evaluate(button => (button as HTMLButtonElement).click())
+    expect(controlRequests).toBe(0)
+
+    device.availability = 'ONLINE'
+    await expect(toggle).toBeEnabled()
+    await expect(toggle).toHaveAttribute('aria-checked', 'true')
+    await expect(card.getByText('ON', { exact: true })).toBeVisible()
+
+    device.availability = availability
+    await expect(card.getByText('Unconnect', { exact: true })).toBeVisible()
+    await expect(toggle).toBeDisabled()
+    await expect(toggle).toHaveAttribute('aria-checked', 'mixed')
+    expect(controlRequests).toBe(0)
+  })
+}
+
+test('API rejects control after connection loss and refreshes the device to Unconnect', async ({ page }) => {
+  await useApiSession(page)
+  const backend = createMockApi({ latency: 0, persist: false })
+  const latest = await backend.sensorLatest()
+  const trends = await backend.sensorTrends()
+  const device: Device = { ...(await backend.devices())[0], name: 'LED1', current_state: 'ON', state_confirmed_at: new Date().toISOString() }
+  let controlRequests = 0
+  await page.route('http://127.0.0.1:5174/api/v1/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (await fulfillDashboardLists(route, latest, trends)) return
+    if (path.endsWith('/devices/')) return route.fulfill({ json: { count: 1, next: null, previous: null, results: [device] } })
+    if (path.endsWith('/control/')) {
+      controlRequests++
+      device.availability = 'OFFLINE'
+      return route.fulfill({ status: 409, json: { error: { code: 'DEVICE_NOT_CONNECTED', message: 'ESP32 is not connected; device control is disabled.', details: { availability: 'OFFLINE' } } } })
+    }
+    return route.fulfill({ status: 404, json: {} })
+  })
+  await page.goto('http://127.0.0.1:5174/dashboard')
+  const toggle = page.getByRole('switch')
+  await expect(toggle).toBeEnabled()
+  await toggle.click()
+  await expect(page.getByText('Unconnect', { exact: true })).toBeVisible()
+  await expect(toggle).toBeDisabled()
+  await expect(page.getByText('ESP32 is not connected; device control is disabled.', { exact: true })).toBeVisible()
+  expect(controlRequests).toBe(1)
+})
+
 test('API chart requests and plots 20 recent readings with second labels', async ({ page }) => {
   await useApiSession(page)
   const backend = createMockApi({ latency: 0, persist: false })
@@ -97,7 +166,7 @@ test('API chart requests and plots 20 recent readings with second labels', async
   for (const label of ['Latest 20 readings', 'Live updates', 'Stale', 'Offline', 'Last known reading · stale', 'Environmental readings over time']) {
     await expect(page.getByText(label, { exact: true })).toHaveCount(0)
   }
-  await expect(page.getByRole('switch', { name: 'Toggle LED Light' })).toBeDisabled()
+  await expect(page.getByRole('switch', { name: 'LED Light unconnect' })).toBeDisabled()
   await expect.poll(() => trendUrl).toContain('sensor_status=ACTIVE')
   const path = await page.locator('.chart-plot path').first().getAttribute('d')
   expect(path?.match(/[ML]/g)).toHaveLength(20)

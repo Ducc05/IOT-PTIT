@@ -33,7 +33,9 @@ class CurrentUserView(APIView):
 
     @extend_schema(responses=CurrentUserSerializer)
     def get(self, request):
-        return Response(CurrentUserSerializer(request.user).data)
+        return Response(
+            CurrentUserSerializer(request.user, context={"request": request}).data
+        )
 
     @extend_schema(request=CurrentUserUpdateSerializer, responses=CurrentUserSerializer)
     def patch(self, request):
@@ -42,4 +44,4 @@ class CurrentUserView(APIView):
         )
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
-        return Response(CurrentUserSerializer(user).data)
+        return Response(CurrentUserSerializer(user, context={"request": request}).data)

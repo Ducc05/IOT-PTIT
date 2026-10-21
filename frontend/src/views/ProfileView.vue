@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { auth } from '../api/auth'
 import { environment } from '../config/environment'
 import { profile } from '../config/profile'
@@ -9,6 +9,12 @@ import PageHeader from '../components/common/PageHeader.vue'
 import AppIcon from '../components/common/AppIcon.vue'
 const avatarFailed = ref(false)
 const isAccount = environment.source === 'api'
+const avatarInput = ref<HTMLInputElement | null>(null)
+const avatarUrl = computed(() => isAccount ? auth.session.value?.avatar : profile.avatarUrl)
+const avatarUploading = ref(false)
+const avatarError = ref('')
+const avatarSaved = ref(false)
+watch(avatarUrl, () => { avatarFailed.value = false })
 const accountName = computed(() => isAccount ? auth.session.value?.full_name || 'Chưa cập nhật họ tên' : profile.name)
 const studentId = computed(() => isAccount ? auth.session.value?.student_id || 'Chưa cập nhật' : profile.studentId || 'Chưa cập nhật')
 const accountEmail = computed(() => isAccount ? auth.session.value?.email || 'No email provided' : profile.email)
@@ -38,6 +44,31 @@ function formError(cause: unknown) {
   }
   return errorMessage(cause)
 }
+async function uploadAvatar(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file || avatarUploading.value) return
+  avatarError.value = ''
+  avatarSaved.value = false
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+    avatarError.value = 'Vui lòng chọn ảnh JPG, PNG hoặc WebP.'
+    return
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    avatarError.value = 'Ảnh đại diện không được vượt quá 5 MB.'
+    return
+  }
+  avatarUploading.value = true
+  try {
+    const body = new FormData()
+    body.append('avatar', file)
+    await auth.updateProfile(body)
+    avatarFailed.value = false
+    avatarSaved.value = true
+  } catch (cause) { avatarError.value = formError(cause) }
+  finally { avatarUploading.value = false }
+}
 async function saveProfile() {
   const full_name = editName.value.trim()
   if (!full_name) { editError.value = 'Vui lòng nhập họ và tên.'; return }
@@ -57,12 +88,18 @@ function validUrl(url: string) { try { return ['https:', 'http:'].includes(new U
     <PageHeader title="Profile" subtitle=""><button v-if="isAccount" class="profile-logout" type="button" @click="auth.logout()">Logout</button></PageHeader>
     <section class="profile-summary card">
       <div class="profile-body">
-        <div class="profile-avatar">
-          <img v-if="!isAccount && profile.avatarUrl && !avatarFailed" :src="profile.avatarUrl" :alt="`Ảnh đại diện của ${profile.name}`" @error="avatarFailed = true" />
+        <div class="profile-avatar-section">
+        <component :is="isAccount ? 'button' : 'div'" class="profile-avatar" :type="isAccount ? 'button' : undefined" :disabled="isAccount && avatarUploading" :aria-label="isAccount ? 'Đổi ảnh đại diện' : undefined" :aria-busy="avatarUploading" :title="isAccount ? 'Bấm để chọn ảnh đại diện' : undefined" @click="isAccount && avatarInput?.click()">
+          <img v-if="avatarUrl && !avatarFailed" :src="avatarUrl" :alt="`Ảnh đại diện của ${accountName}`" @error="avatarFailed = true" />
           <svg v-else width="120" height="120" viewBox="0 0 120 120" fill="currentColor" aria-hidden="true">
             <circle cx="60" cy="39" r="25" />
             <path d="M10 120v-10a50 50 0 0 1 100 0v10Z" />
           </svg>
+          <span v-if="isAccount" class="profile-avatar-overlay">{{ avatarUploading ? 'Đang tải…' : 'Đổi ảnh' }}</span>
+        </component>
+        <input v-if="isAccount" ref="avatarInput" type="file" accept="image/jpeg,image/png,image/webp" aria-label="Chọn ảnh đại diện" hidden @change="uploadAvatar" />
+        <p v-if="avatarError" class="profile-avatar-error" role="alert">{{ avatarError }}</p>
+        <p v-else-if="avatarSaved" class="profile-success" role="status">Đã đổi ảnh đại diện.</p>
         </div>
         <div class="profile-details">
           <template v-if="!editing">
