@@ -11,7 +11,7 @@ async function fixtures() {
   return Promise.all(types.map(async type => (await backend.sensorData({ page: 1, page_size: 1, type })).results[0]))
 }
 
-test('Data searches exact measured values by type, keeps filters and rejects names', async ({ page }) => {
+test('Data searches exact measured values by type, keeps filters and validates formats', async ({ page }) => {
   await useApiSession(page)
   const prototypes = await fixtures()
   const rows: SensorDataRow[] = []
@@ -33,10 +33,10 @@ test('Data searches exact measured values by type, keeps filters and rejects nam
   await page.goto('http://127.0.0.1:5174/data?from=2099-01-01T00:00:00Z&to=2099-01-02T00:00:00Z')
   await expect(page.locator('tbody .row-id')).toHaveCount(10)
   await expect(page.getByRole('button', { name: 'Date & time range', exact: true })).toHaveCount(0)
-  await expect(page.getByLabel('Sensor value', { exact: true })).toHaveAttribute('placeholder', 'Enter value to search (e.g. 28.5)')
+  await expect(page.getByLabel('Search data', { exact: true })).toHaveAttribute('placeholder', 'Enter value, Date & Time or name (e.g. 28.5 or 21/10/2026)')
   for (const [type, label, count] of [['TEMPERATURE', 'Temp', 12], ['HUMIDITY', 'Humidity', 10], ['LIGHT', 'Light', 6]] as const) {
     await page.getByLabel('Sensor type', { exact: true }).selectOption(type)
-    await page.getByLabel('Sensor value', { exact: true }).fill('50')
+    await page.getByLabel('Search data', { exact: true }).fill('50')
     await page.getByRole('button', { name: 'Filter', exact: true }).click()
     await expect(page.locator('.pagination-total')).toHaveText(`of ${count} items`)
     await expect.poll(() => page.locator('tbody .sensor-type').allTextContents()).toEqual(Array(Math.min(10, count)).fill(label))
@@ -51,30 +51,30 @@ test('Data searches exact measured values by type, keeps filters and rejects nam
       await expect(page).toHaveURL(/page=2/)
       expect(queries.at(-1)?.get('value')).toBe('50')
       await page.reload()
-      await expect(page.getByLabel('Sensor value', { exact: true })).toHaveValue('50')
+      await expect(page.getByLabel('Search data', { exact: true })).toHaveValue('50')
       await expect(page.getByLabel('Sensor type', { exact: true })).toHaveValue('TEMPERATURE')
       await expect(page.locator('tbody .row-id')).toHaveCount(2)
     }
   }
   await page.getByLabel('Sensor type', { exact: true }).selectOption('TEMPERATURE')
-  await page.getByLabel('Sensor value', { exact: true }).fill('0')
+  await page.getByLabel('Search data', { exact: true }).fill('0')
   await page.getByRole('button', { name: 'Filter', exact: true }).click()
   await expect(page.locator('.pagination-total')).toHaveText('of 3 items')
   await expect(page.locator('tbody .row-id')).toHaveCount(3)
-  await page.getByLabel('Sensor value', { exact: true }).fill('28,5')
+  await page.getByLabel('Search data', { exact: true }).fill('28,5')
   await page.getByRole('button', { name: 'Filter', exact: true }).click()
   await expect(page.locator('.pagination-total')).toHaveText('of 4 items')
   expect(queries.at(-1)?.get('value')).toBe('28.5')
-  await page.getByLabel('Sensor value', { exact: true }).fill('TEMP_01')
+  await page.getByLabel('Search data', { exact: true }).fill('31/02/2026')
   await page.getByRole('button', { name: 'Filter', exact: true }).click()
-  await expect(page.getByRole('alert')).toHaveText('Vui lòng nhập một giá trị số, ví dụ 28.5.')
+  await expect(page.getByRole('alert')).toHaveText('Vui lòng nhập ngày giờ hợp lệ, ví dụ 21/10/2026 12:34:56.')
   await page.getByRole('button', { name: 'Reset filters', exact: true }).click()
-  await expect(page.getByLabel('Sensor value', { exact: true })).toHaveValue('')
+  await expect(page.getByLabel('Search data', { exact: true })).toHaveValue('')
   await expect(page.getByLabel('Sensor type', { exact: true })).toHaveValue('')
   await expect(page.locator('.pagination-total')).toHaveText(`of ${rows.length} items`)
 })
 
-test('Time search accepts text copied from Date & Time, converts local time to UTC and restores on reload', async ({ page }) => {
+test('Time search accepts text copied from Date & Time without selecting type, converts local time to UTC and restores on reload', async ({ page }) => {
   await useApiSession(page)
   const prototypes = await fixtures()
   const times = ['2026-10-07T05:34:55.999Z', '2026-10-07T05:34:56.000Z', '2026-10-07T05:34:56.500Z', '2026-10-07T05:34:57.000Z', '2026-10-07T05:35:00.000Z']
@@ -89,9 +89,9 @@ test('Time search accepts text copied from Date & Time, converts local time to U
   await page.goto('http://127.0.0.1:5174/data')
   await expect(page.locator('tbody .row-id')).toHaveCount(5)
   const copiedTime = await page.locator('tbody .date-cell').nth(1).innerText()
-  await page.getByLabel('Sensor type', { exact: true }).selectOption('TIME')
-  await expect(page.getByLabel('Sensor time', { exact: true })).toHaveAttribute('type', 'text')
-  await page.getByLabel('Sensor time', { exact: true }).fill(copiedTime)
+  await expect(page.getByLabel('Sensor type', { exact: true })).toHaveValue('')
+  await expect(page.getByLabel('Search data', { exact: true })).toHaveAttribute('type', 'text')
+  await page.getByLabel('Search data', { exact: true }).fill(copiedTime)
   await page.getByRole('button', { name: 'Filter', exact: true }).click()
   await expect(page.locator('tbody .row-id')).toHaveText(['#2', '#3'])
   expect(queries.at(-1)?.get('from')).toBe('2026-10-07T05:34:56.000Z')
@@ -100,18 +100,19 @@ test('Time search accepts text copied from Date & Time, converts local time to U
   expect(queries.at(-1)?.has('search')).toBe(false)
   expect(queries.at(-1)?.has('value')).toBe(false)
   await page.reload()
-  await expect(page.getByLabel('Sensor type', { exact: true })).toHaveValue('TIME')
-  await expect(page.getByLabel('Sensor time', { exact: true })).toHaveValue(copiedTime)
+  await expect(page.getByLabel('Sensor type', { exact: true })).toHaveValue('')
+  await expect(page.getByLabel('Search data', { exact: true })).toHaveValue(copiedTime)
   await expect(page.locator('tbody .row-id')).toHaveCount(2)
-  await page.getByLabel('Sensor time', { exact: true }).fill('2026-10-07T12:34')
+  await page.getByLabel('Search data', { exact: true }).fill('2026-10-07T12:34')
   await page.getByRole('button', { name: 'Filter', exact: true }).click()
   await expect(page.locator('tbody .row-id')).toHaveCount(4)
   await page.getByLabel('Sensor type', { exact: true }).selectOption('TEMPERATURE')
-  await expect(page.getByLabel('Sensor value', { exact: true })).toHaveValue('')
+  await expect(page.getByLabel('Search data', { exact: true })).toHaveValue('2026-10-07T12:34')
   await page.getByRole('button', { name: 'Filter', exact: true }).click()
   await expect(page.locator('tbody .row-id')).toHaveText(['#1', '#4'])
-  expect(queries.at(-1)?.has('from')).toBe(false)
-  expect(queries.at(-1)?.has('to')).toBe(false)
+  expect(queries.at(-1)?.get('type')).toBe('TEMPERATURE')
+  expect(queries.at(-1)?.get('from')).toBe('2026-10-07T05:34:00.000Z')
+  expect(queries.at(-1)?.get('to')).toBe('2026-10-07T05:35:00.000Z')
 })
 
 test('History filters by device, action, and status without Date & time range filter', async ({ page }) => {

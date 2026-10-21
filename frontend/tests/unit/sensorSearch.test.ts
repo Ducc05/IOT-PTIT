@@ -25,7 +25,26 @@ describe('Sensor value search', () => {
     expect(sensorDataQuery({ search: '0', type: 'TEMPERATURE', page: 2, page_size: 25, ordering: 'value' })).toEqual({
       search: undefined, value: 0, type: 'TEMPERATURE', page: 2, page_size: 25, ordering: 'value',
     })
-    expect(() => sensorDataQuery({ search: 'TEMP_01', page: 1, page_size: 10 })).toThrow('Vui lòng nhập một giá trị số')
+    expect(sensorDataQuery({ search: 'TEMP_01', page: 1, page_size: 10 })).toEqual({
+      search: 'TEMP_01', type: undefined, page: 1, page_size: 10,
+    })
+    // Value search across all types (no type selected)
+    expect(sensorDataQuery({ search: '28.5', page: 1, page_size: 10 })).toEqual({
+      search: undefined, value: 28.5, type: undefined, page: 1, page_size: 10,
+    })
+    // Datetime search across all types (no type selected)
+    const allTypesDate = sensorDataQuery({ search: '21/10/2026 13:45', page: 1, page_size: 10 })
+    expect(allTypesDate.search).toBeUndefined()
+    expect(allTypesDate.type).toBeUndefined()
+    expect(allTypesDate.from).toBe(new Date(2026, 9, 21, 13, 45, 0).toISOString())
+    expect(allTypesDate.to).toBe(new Date(2026, 9, 21, 13, 46, 0).toISOString())
+
+    // Datetime search with specific type
+    const tempDate = sensorDataQuery({ search: '21/10/2026 13:45', type: 'TEMPERATURE', page: 1, page_size: 10 })
+    expect(tempDate.search).toBeUndefined()
+    expect(tempDate.type).toBe('TEMPERATURE')
+    expect(tempDate.from).toBe(new Date(2026, 9, 21, 13, 45, 0).toISOString())
+    expect(tempDate.to).toBe(new Date(2026, 9, 21, 13, 46, 0).toISOString())
   })
   it('combines exact value and sensor type in the mock backend', async () => {
     const backend = createMockApi({ persist: false, latency: 0 })

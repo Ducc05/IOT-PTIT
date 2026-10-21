@@ -137,9 +137,13 @@ export function sensorValueError(input: string) {
     : ''
 }
 
-export function sensorSearchError(type: string | undefined, input: string) {
-  if (type === 'TIME') return input.trim() && !sensorTimeRange(input) ? 'Vui lòng nhập ngày giờ hợp lệ, ví dụ 21/10/2026 12:34:56.' : ''
-  return sensorValueError(input)
+export function sensorSearchError(type: string | undefined, input: string): string {
+  const text = input.trim()
+  if (!text) return ''
+  if (type === 'TIME' || /[/:]/.test(text) || /^\d{4}[-/]\d{2}/.test(text)) {
+    return sensorTimeRange(text) ? '' : 'Vui lòng nhập ngày giờ hợp lệ, ví dụ 21/10/2026 12:34:56.'
+  }
+  return ''
 }
 
 export function historySearchError(input: string): string {
@@ -151,19 +155,25 @@ export function historySearchError(input: string): string {
   return ''
 }
 
-// UI search is a measured value; API search remains the legacy code/name query.
+// UI search is a measured value, datetime range, or name query; all types are filtered by default unless a specific type is selected.
 export function sensorDataQuery(input: ListQuery): ListQuery {
   // Removed Data range controls must not keep filtering through old URLs.
   const { from: _from, to: _to, ...query } = input
   const search = query.search?.trim()
-  if (query.type === 'TIME') {
-    const range = search ? sensorTimeRange(search) : null
-    if (search && !range) throw new ApiError('VALIDATION_ERROR', sensorSearchError('TIME', search), 400)
-    return { ...query, search: undefined, type: undefined, value: undefined, ...(range || {}) }
+  const activeType = query.type === 'TIME' ? undefined : query.type
+  if (!search) return { ...query, type: activeType }
+
+  const range = sensorTimeRange(search)
+  if (range) {
+    return { ...query, search: undefined, type: activeType, value: undefined, ...range }
   }
-  const value = search ? parseSensorValue(search) : query.value
-  if (search && value === null) throw new ApiError('VALIDATION_ERROR', sensorValueError(search), 400)
-  return { ...query, search: undefined, value: value ?? undefined }
+
+  const value = parseSensorValue(search)
+  if (value !== null) {
+    return { ...query, search: undefined, type: activeType, value }
+  }
+
+  return { ...query, type: activeType, search }
 }
 
 export function historyDataQuery(input: ListQuery): ListQuery {
