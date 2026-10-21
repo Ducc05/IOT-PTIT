@@ -141,3 +141,25 @@ test('History filters by device, action, and status without Date & time range fi
   expect(queries.at(-1)?.has('from')).toBe(false)
   expect(queries.at(-1)?.has('to')).toBe(false)
 })
+
+test('History search filters by datetime when a timestamp or date is entered', async ({ page }) => {
+  await useApiSession(page)
+  const backend = createMockApi({ latency: 0, persist: false })
+  const devices = await backend.devices()
+  const queries: URLSearchParams[] = []
+  await page.route('http://127.0.0.1:5174/api/v1/**', route => {
+    const url = new URL(route.request().url()), query = url.searchParams
+    if (url.pathname.endsWith('/devices/')) return route.fulfill({ json: { count: devices.length, next: null, previous: null, results: devices } })
+    if (url.pathname.endsWith('/device-history/')) {
+      queries.push(query)
+      return route.fulfill({ json: { count: 1, next: null, previous: null, results: [] } })
+    }
+    return route.continue()
+  })
+  await page.goto('http://127.0.0.1:5174/history')
+  await page.getByLabel('History ID', { exact: true }).fill('21/10/2026 13:45')
+  await page.getByRole('button', { name: 'Filter', exact: true }).click()
+  expect(queries.at(-1)?.get('from')).toBe(new Date(2026, 9, 21, 13, 45, 0).toISOString())
+  expect(queries.at(-1)?.get('to')).toBe(new Date(2026, 9, 21, 13, 46, 0).toISOString())
+  expect(queries.at(-1)?.has('search')).toBe(false)
+})

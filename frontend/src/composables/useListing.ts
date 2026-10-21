@@ -6,7 +6,7 @@ import type { CommandResource, Device, ListQuery, PageResponse, SensorDataRow } 
 import { useLiveResource } from './useLiveResource'
 import { errorMessage } from '../utils/format'
 import { validPageSize } from '../config/pagination'
-import { sensorDataQuery, sensorSearchError, sensorSearchTypes } from '../utils/sensorSearch'
+import { historyDataQuery, historySearchError, sensorDataQuery, sensorSearchError, sensorSearchTypes } from '../utils/sensorSearch'
 export interface FilterDraft { search: string; type: string; device: string; action: string; status: string }
 export type TableRow = SensorDataRow | CommandResource
 const empty = (): FilterDraft => ({ search: '', type: '', device: '', action: '', status: '' })
@@ -28,7 +28,7 @@ export function useListing(kind: 'data' | 'history') {
     }
   })
   const resource = useLiveResource<PageResponse<TableRow>>(async signal => {
-    const query = kind === 'data' ? sensorDataQuery(applied.value) : { ...applied.value }
+    const query = kind === 'data' ? sensorDataQuery(applied.value) : historyDataQuery(applied.value)
     if (kind === 'history') {
       try { devices.value = await api.devices(signal); optionsError.value = '' } catch (cause) { if (signal.aborted) throw cause; optionsError.value = errorMessage(cause) }
     }
@@ -58,7 +58,7 @@ export function useListing(kind: 'data' | 'history') {
   watch(applied, () => { void resource.refresh() })
   async function apply() {
     const { search, type, device, action, status } = draft.value
-    formError.value = kind === 'data' ? sensorSearchError(type, search) : ''
+    formError.value = kind === 'data' ? sensorSearchError(type, search) : historySearchError(search)
     if (formError.value) return
     await update({ search: search.trim() || undefined, ...(kind === 'data' ? { type: type || undefined } : { device: device ? Number(device) : undefined, action: action || undefined, status: status || undefined }),
       page: 1, page_size: applied.value.page_size, ordering: applied.value.ordering })
