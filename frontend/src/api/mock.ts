@@ -9,7 +9,6 @@ const units = ['°C', '%', 'lux']
 const mockUsers = ['admin_alex', 'operator_1', 'sarah_k', 'm.turner', 'jdoe', 'system_bot', 'alex.w']
 interface Database {
   readings: SensorDataRow[]; devices: Device[]; history: CommandResource[]
-  keys: Record<string, string>
 }
 const copy = <T>(value: T): T => structuredClone(value)
 const iso = (time: number) => new Date(time).toISOString()
@@ -50,7 +49,7 @@ function seed(): Database {
   for (let i = 360; i >= 0; i--) { readings.push(...readingsAt(now - i * 240000, sequence)); sequence += 3 }
   const history = Array.from({ length: 100 }, (_, i) => commandFor(devices[i % 4], i % 2 ? 'TURN_OFF' : 'TURN_ON', i + 1, now - (100 - i) * 900000,
     i % 17 === 0 ? 'TIMEOUT' : i % 11 === 0 ? 'FAILED' : 'SUCCESS', mockUsers[i % mockUsers.length]))
-  return { readings, devices, history, keys: {} }
+  return { readings, devices, history }
 }
 
 export function createMockApi(options: { latency?: number; persist?: boolean } = {}): IoTApi {
@@ -138,17 +137,12 @@ export function createMockApi(options: { latency?: number; persist?: boolean } =
     }, signal),
     devices: signal => respond(() => db.devices, signal),
     control: (id, body, signal) => respond(() => {
-      const replay = db.history.find(h => h.command_id === db.keys[body.idempotency_key])
-      if (replay) {
-        if (replay.device.id !== id || replay.action !== body.action) throw new ApiError('IDEMPOTENCY_CONFLICT', 'This key belongs to another command.', 409)
-        return replay
-      }
       const device = db.devices.find(d => d.id === id)
       if (!device) throw new ApiError('DEVICE_NOT_FOUND', 'Device not found.', 404)
       if (device.pending_command) throw new ApiError('DEVICE_COMMAND_IN_PROGRESS', 'A command is already processing.', 409, { command_id: device.pending_command.command_id })
       const command = commandFor(device, body.action, (db.history.at(-1)?.id ?? 0) + 1, Date.now())
       device.pending_command = { command_id: command.command_id, requested_state: command.requested_state, expires_at: command.expires_at, status_url: command.status_url }
-      db.history.push(command); db.keys[body.idempotency_key] = command.command_id; save()
+      db.history.push(command); save()
       return command
     }, signal),
     command: (id, signal) => respond(() => {

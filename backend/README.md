@@ -122,7 +122,7 @@ Device History tags.
 | `/api/v1/sensors/` | ModelViewSet; đọc và ghi đều cần JWT |
 | `/api/v1/sensor-data/` | ReadOnlyModelViewSet; FilterSet theo name/type/sensor_status/value/from/to, OrderingFilter theo created_at/value/id |
 | `/api/v1/devices/` | ModelViewSet; current_state chỉ đọc, MQTT status cập nhật state |
-| `/api/v1/devices/{id}/control/` | POST cần JWT: action TURN_ON/TURN_OFF + idempotency_key; trả 202 PENDING |
+| `/api/v1/devices/{id}/control/` | POST cần JWT: action TURN_ON/TURN_OFF; trả 202 PENDING |
 | `/api/v1/device-history/` | ReadOnlyModelViewSet; FilterSet theo device/action/status/from/to, search ID, OrderingFilter theo created_at |
 | `/api/v1/device-history/{id}/` | Đọc kết quả bằng History PK, kể cả PENDING/FAILED |
 | `/api/auth/register/` | Tạo tài khoản qua Django User hiện cấu hình và cấp access/refresh token SimpleJWT |
@@ -178,8 +178,8 @@ không suy diễn lỗi DHT từ một khoảng trống dữ liệu.
 
 ## Điều khiển và các giới hạn của firmware hiện tại
 
-View lock Device, chỉ nhận một PENDING/device; idempotency scoped theo user/key
-qua task identity/result có sẵn. Queue send sau commit. Nếu AMQP publish lỗi,
+Serializer lock Device, chỉ nhận một PENDING/device. Mỗi request được chấp nhận
+tạo History và task mới. Queue send sau commit. Nếu AMQP publish lỗi,
 History chuyển FAILED và API trả lỗi có ID để tra cứu; không xác nhận SUCCESS.
 Task gửi ON/OFF qua publisher ngắn hạn, đợi **history phản hồi** cùng topic/action
 trong deadline, không coi PUBACK hay retained LED status là kết quả command.

@@ -137,7 +137,7 @@ class MQTTIntegrationTests(TransactionTestCase):
         results = []
         errors = []
 
-        def submit(key):
+        def submit():
             close_old_connections()
             try:
                 user = User.objects.get(pk=self.user.pk)
@@ -146,7 +146,7 @@ class MQTTIntegrationTests(TransactionTestCase):
                 barrier.wait(timeout=3)
                 response = client.post(
                     f"/api/v1/devices/{self.device.pk}/control/",
-                    {"action": "TURN_ON", "idempotency_key": key},
+                    {"action": "TURN_ON"},
                     format="json",
                 )
                 results.append(response.status_code)
@@ -156,9 +156,7 @@ class MQTTIntegrationTests(TransactionTestCase):
                 connection.close()
 
         with patch("core.tasks.control_device.apply_async"):
-            threads = [
-                threading.Thread(target=submit, args=(key,)) for key in ("one", "two")
-            ]
+            threads = [threading.Thread(target=submit) for _ in range(2)]
             for thread in threads:
                 thread.start()
             for thread in threads:
@@ -166,40 +164,3 @@ class MQTTIntegrationTests(TransactionTestCase):
         self.assertFalse(errors)
         self.assertEqual(sorted(results), [202, 409])
         self.assertEqual(DeviceHistory.objects.filter(status="PENDING").count(), 1)
-
-    def test_concurrent_same_key_replays_one_command(self):
-        self.confirm_connection()
-        barrier = threading.Barrier(2)
-        responses = []
-        errors = []
-
-        def submit():
-            close_old_connections()
-            try:
-                client = APIClient()
-                client.force_authenticate(User.objects.get(pk=self.user.pk))
-                barrier.wait(timeout=3)
-                response = client.post(
-                    f"/api/v1/devices/{self.device.pk}/control/",
-                    {"action": "TURN_ON", "idempotency_key": "same"},
-                    format="json",
-                )
-                responses.append(
-                    (response.status_code, response.data.get("command_id"))
-                )
-            except Exception as exc:  # noqa: BLE001 - report every thread failure to parent assertions
-                errors.append(type(exc).__name__)
-            finally:
-                connection.close()
-
-        with patch("core.tasks.control_device.apply_async") as publish:
-            threads = [threading.Thread(target=submit) for _ in range(2)]
-            for thread in threads:
-                thread.start()
-            for thread in threads:
-                thread.join(timeout=5)
-        self.assertFalse(errors)
-        self.assertEqual([code for code, _ in responses], [202, 202])
-        self.assertEqual(len({pk for _, pk in responses}), 1)
-        self.assertEqual(DeviceHistory.objects.count(), 1)
-        self.assertEqual(publish.call_count, 1)

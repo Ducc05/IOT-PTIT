@@ -29,7 +29,7 @@ export function useDeviceControls(devices: ShallowRef<Device[] | null>, refresh:
     try {
       const intent = store.controls[id]
       if (!intent.commandId) {
-        const result = await api.control(id, { action: intent.action, idempotency_key: intent.key }, signal)
+        const result = await api.control(id, { action: intent.action }, signal)
         store.set(id, { ...intent, commandId: result.command_id })
       }
       while (!signal.aborted) {
@@ -61,9 +61,9 @@ export function useDeviceControls(devices: ShallowRef<Device[] | null>, refresh:
     }
   }
   function control(device: Device, action: DeviceAction) {
-    if (device.availability !== 'ONLINE' || store.controls[device.id] || device.pending_command) return
+    if (store.controls[device.id] || device.pending_command) return
     delete errors.value[device.id]
-    store.set(device.id, { action, key: `ui-${crypto.randomUUID()}`, commandId: null, phase: 'pending', message: '' })
+    store.set(device.id, { action, commandId: null, phase: 'pending', message: '' })
     void track(device.id)
   }
   function retry(id: number) {
@@ -75,7 +75,7 @@ export function useDeviceControls(devices: ShallowRef<Device[] | null>, refresh:
     if (!snapshot) return
     for (const device of snapshot) {
       if (device.pending_command && !store.controls[device.id]) {
-        store.set(device.id, { action: device.pending_command.requested_state === 'ON' ? 'TURN_ON' : 'TURN_OFF', key: `resume-${device.pending_command.command_id}`,
+        store.set(device.id, { action: device.pending_command.requested_state === 'ON' ? 'TURN_ON' : 'TURN_OFF',
           commandId: device.pending_command.command_id, phase: 'pending', message: '' })
       }
     }

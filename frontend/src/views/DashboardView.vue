@@ -14,7 +14,7 @@ import SensorTrendsChart from '../components/dashboard/SensorTrendsChart.vue'
 import type { SensorLatest, SensorType } from '../types/api'
 const router = useRouter()
 const { data: latestData, error: latestError, loading: latestLoading, refresh: refreshLatest } = useLiveResource(signal => api.sensorLatest(signal))
-const { data: devices, error: devicesError, loading: devicesLoading, refresh: refreshDevices } = useLiveResource(signal => api.devices(signal))
+const { data: devices, error: devicesError, loading: devicesLoading, refresh: refreshDevices } = useLiveResource(signal => api.devices(signal), 0)
 const { data: trendsData, error: trendsError, loading: trendsLoading, refresh: refreshTrends } = useLiveResource(
   signal => api.sensorTrends(signal), environment.source === 'api' ? environment.trendsRefreshMs : 0,
 )

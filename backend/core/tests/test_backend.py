@@ -527,7 +527,7 @@ class BackendTests(TestCase):
             401,
         )
 
-    def test_control_requires_a_fresh_connected_esp32(self):
+    def test_control_creates_pending_command_even_without_fresh_esp32(self):
         cases = [
             (None, {}),
             ("UNKNOWN", {}),
@@ -547,33 +547,41 @@ class BackendTests(TestCase):
                 },
             ),
         ]
-        with patch("core.tasks.control_device.apply_async") as publish:
-            for availability, overrides in cases:
-                for action in ("TURN_ON", "TURN_OFF"):
-                    with self.subTest(
-                        availability=availability, overrides=overrides, action=action
+        for availability, overrides in cases:
+            for action in ("TURN_ON", "TURN_OFF"):
+                with self.subTest(
+                    availability=availability, overrides=overrides, action=action
+                ):
+                    TaskResult.objects.all().delete()
+                    if availability is not None:
+                        self.record_mqtt_health(availability, **overrides)
+                    with (
+                        patch("core.tasks.control_device.apply_async") as publish,
+                        self.captureOnCommitCallbacks(execute=True),
                     ):
-                        TaskResult.objects.all().delete()
-                        if availability is not None:
-                            self.record_mqtt_health(availability, **overrides)
                         response = self.client.post(
                             f"/api/v1/devices/{self.led1.pk}/control/",
-                            {"action": action, "idempotency_key": "not-connected"},
+                            {"action": action},
                             format="json",
                         )
-                        self.assertEqual(response.status_code, 409)
-                        self.assertEqual(
-                            response.data["error"]["code"], "DEVICE_NOT_CONNECTED"
-                        )
-                        self.assertEqual(DeviceHistory.objects.count(), 0)
-                        self.assertFalse(
-                            TaskResult.objects.filter(
-                                task_name="core.tasks.control_device"
-                            ).exists()
-                        )
-                        device = self.client.get(f"/api/v1/devices/{self.led1.pk}/")
-                        self.assertNotEqual(device.data["availability"], "ONLINE")
-            publish.assert_not_called()
+                    self.assertEqual(response.status_code, 202)
+                    self.assertEqual(response.data["status"], "PENDING")
+                    history = DeviceHistory.objects.order_by("-pk").first()
+                    self.assertIsNotNone(history)
+                    self.assertEqual(history.status, "PENDING")
+                    self.assertTrue(
+                        TaskResult.objects.filter(
+                            task_name="core.tasks.control_device",
+                            status="PENDING",
+                        ).exists()
+                    )
+                    publish.assert_called_once()
+                    DeviceHistory.objects.filter(pk=history.pk).update(
+                        status="FAILED"
+                    )
+                    TaskResult.objects.all().delete()
+                    device = self.client.get(f"/api/v1/devices/{self.led1.pk}/")
+                    self.assertNotEqual(device.data["availability"], "ONLINE")
         self.led1.refresh_from_db()
         self.assertEqual(self.led1.current_state, "OFF")
 
@@ -607,7 +615,7 @@ class BackendTests(TestCase):
             self.assertNotEqual(self.client.get(url).data["availability"], "ONLINE")
 
     @override_settings(CELERY_TASK_ALWAYS_EAGER=True)
-    def test_eager_control_uses_live_connection_and_blocks_after_disconnect(self):
+    def test_eager_control_queues_command_after_disconnect(self):
         self.reader.connected = self.reader.ready = True
         self.reader.process(self.item())
         url = f"/api/v1/devices/{self.led1.pk}/control/"
@@ -618,7 +626,7 @@ class BackendTests(TestCase):
         ):
             response = self.client.post(
                 url,
-                {"action": "TURN_ON", "idempotency_key": "eager-online"},
+                {"action": "TURN_ON"},
                 format="json",
             )
         self.assertEqual(response.status_code, 202)
@@ -628,36 +636,63 @@ class BackendTests(TestCase):
         with (
             patch("core.tasks._reader", self.reader),
             patch("core.tasks.control_device.apply_async") as publish,
+            self.captureOnCommitCallbacks(execute=True),
         ):
             response = self.client.post(
                 f"/api/v1/devices/{self.led2.pk}/control/",
-                {"action": "TURN_ON", "idempotency_key": "eager-offline"},
+                {"action": "TURN_ON"},
                 format="json",
             )
-        self.assertEqual(response.status_code, 409)
-        self.assertEqual(response.data["error"]["code"], "DEVICE_NOT_CONNECTED")
-        self.assertEqual(DeviceHistory.objects.count(), 1)
-        publish.assert_not_called()
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.data["status"], "PENDING")
+        self.assertEqual(DeviceHistory.objects.count(), 2)
+        self.assertEqual(publish.call_count, 1)
 
-    def test_expired_worker_health_does_not_allow_control(self):
+    def test_expired_worker_health_does_not_block_control(self):
         report = self.record_mqtt_health()
         TaskResult.objects.filter(pk=report.pk).update(
             date_done=timezone.now() - timedelta(seconds=16)
         )
-        with patch("core.tasks.control_device.apply_async") as publish:
+        with (
+            patch("core.tasks.control_device.apply_async") as publish,
+            self.captureOnCommitCallbacks(execute=True),
+        ):
             response = self.client.post(
                 f"/api/v1/devices/{self.led1.pk}/control/",
-                {"action": "TURN_ON", "idempotency_key": "expired-health"},
+                {"action": "TURN_ON"},
                 format="json",
             )
-        self.assertEqual(response.status_code, 409)
-        self.assertFalse(DeviceHistory.objects.exists())
-        publish.assert_not_called()
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.data["status"], "PENDING")
+        self.assertEqual(DeviceHistory.objects.count(), 1)
+        publish.assert_called_once()
 
-    def test_reconnect_allows_previously_rejected_intent(self):
+    @override_settings(CELERY_TASK_ALWAYS_EAGER=False)
+    def test_offline_command_stays_pending_until_worker_fails_then_reconnect_allows_new_intent(
+        self,
+    ):
         url = f"/api/v1/devices/{self.led1.pk}/control/"
-        intent = {"action": "TURN_ON", "idempotency_key": "reconnect"}
-        self.assertEqual(self.client.post(url, intent, format="json").status_code, 409)
+        intent = {"action": "TURN_ON"}
+        with (
+            patch("core.tasks.control_device.apply_async"),
+            self.captureOnCommitCallbacks(execute=True),
+        ):
+            response = self.client.post(url, intent, format="json")
+        self.assertEqual(response.status_code, 202)
+        history = DeviceHistory.objects.get()
+        self.assertEqual(history.status, "PENDING")
+        self.assertEqual(response.data["status"], "PENDING")
+        self.reader.connected = self.reader.ready = True
+        self.reader.esp_status = "OFFLINE"
+        with (
+            patch("core.tasks._reader", self.reader),
+            patch.object(self.reader, "ensure_started", return_value=True),
+        ):
+            result = control_device.run(history.pk)
+        self.assertEqual(result["status"], "FAILED")
+        history.refresh_from_db()
+        self.assertEqual(history.status, "FAILED")
+
         self.record_mqtt_health()
         self.assertEqual(
             self.client.get(url.removesuffix("control/")).data["availability"], "ONLINE"
@@ -666,9 +701,13 @@ class BackendTests(TestCase):
             patch("core.tasks.control_device.apply_async") as publish,
             self.captureOnCommitCallbacks(execute=True),
         ):
-            response = self.client.post(url, intent, format="json")
+            response = self.client.post(
+                url,
+                {"action": "TURN_ON"},
+                format="json",
+            )
         self.assertEqual(response.status_code, 202)
-        self.assertEqual(DeviceHistory.objects.count(), 1)
+        self.assertEqual(DeviceHistory.objects.count(), 2)
         publish.assert_called_once()
 
     def test_worker_does_not_publish_after_esp32_disconnects(self):
@@ -697,68 +736,50 @@ class BackendTests(TestCase):
         self.led1.refresh_from_db()
         self.assertEqual(self.led1.current_state, "OFF")
 
-    def test_control_idempotent_pending_and_conflict(self):
+    def test_control_rejects_requests_while_command_is_pending(self):
         self.record_mqtt_health()
         url = f"/api/v1/devices/{self.led1.pk}/control/"
         with patch("core.tasks.control_device.apply_async") as publish:
             with self.captureOnCommitCallbacks(execute=True):
                 response = self.client.post(
                     url,
-                    {"action": "TURN_ON", "idempotency_key": "intent-1"},
+                    {"action": "TURN_ON"},
                     format="json",
                 )
             self.assertEqual(response.status_code, 202)
             self.assertEqual(DeviceHistory.objects.count(), 1)
             self.assertEqual(DeviceHistory.objects.get().user_id, self.user.pk)
             self.assertEqual(publish.call_count, 1)
-            # A retry reads the existing command even after connectivity is lost.
-            TaskResult.objects.filter(task_name="core.tasks.read_mqtt_data").delete()
-            replay = self.client.post(
-                url, {"action": "TURN_ON", "idempotency_key": "intent-1"}, format="json"
-            )
-            self.assertEqual(replay.status_code, 202)
+            for action in ("TURN_ON", "TURN_OFF"):
+                busy = self.client.post(url, {"action": action}, format="json")
+                self.assertEqual(busy.status_code, 409)
+                self.assertEqual(
+                    busy.data["error"]["code"], "DEVICE_COMMAND_IN_PROGRESS"
+                )
+                self.assertEqual(
+                    busy.data["error"]["details"]["command_id"],
+                    response.data["command_id"],
+                )
             self.assertEqual(publish.call_count, 1)
-            conflict = self.client.post(
-                url,
-                {"action": "TURN_OFF", "idempotency_key": "intent-1"},
-                format="json",
-            )
-            self.assertEqual(conflict.status_code, 409)
-            busy = self.client.post(
-                url, {"action": "TURN_ON", "idempotency_key": "intent-2"}, format="json"
-            )
-            self.assertEqual(busy.status_code, 409)
         self.assertEqual(DeviceHistory.objects.count(), 1)
 
-    def test_idempotency_replay_after_celery_encodes_kwargs(self):
-        history = self.command(status="SUCCESS")
-        import hashlib
-
-        task_id = (
-            "iot-control-" + hashlib.sha256(f"{self.user.pk}:done".encode()).hexdigest()
-        )
-        metadata = {
-            "history_id": history.pk,
-            "device_id": self.led1.pk,
-            "action": "TURN_ON",
-        }
-        TaskResult.objects.create(
-            task_id=task_id,
-            task_name="core.tasks.control_device",
-            status="SUCCESS",
-            task_kwargs=json.dumps(json.dumps(metadata)),
-            content_type="application/json",
-            content_encoding="utf-8",
-        )
+    def test_control_creates_new_command_after_previous_finishes(self):
+        url = f"/api/v1/devices/{self.led1.pk}/control/"
         with patch("core.tasks.control_device.apply_async") as publish:
-            response = self.client.post(
-                f"/api/v1/devices/{self.led1.pk}/control/",
-                {"action": "TURN_ON", "idempotency_key": "done"},
-                format="json",
+            with self.captureOnCommitCallbacks(execute=True):
+                first = self.client.post(url, {"action": "TURN_ON"}, format="json")
+            self.assertEqual(first.status_code, 202)
+            DeviceHistory.objects.filter(pk=first.data["id"]).update(status="SUCCESS")
+            with self.captureOnCommitCallbacks(execute=True):
+                second = self.client.post(url, {"action": "TURN_ON"}, format="json")
+            self.assertEqual(second.status_code, 202)
+            self.assertNotEqual(first.data["command_id"], second.data["command_id"])
+            self.assertEqual(publish.call_count, 2)
+            self.assertNotEqual(
+                publish.call_args_list[0].kwargs["task_id"],
+                publish.call_args_list[1].kwargs["task_id"],
             )
-        self.assertEqual(response.status_code, 200)
-        publish.assert_not_called()
-        self.assertEqual(DeviceHistory.objects.count(), 1)
+        self.assertEqual(DeviceHistory.objects.count(), 2)
 
     def test_broker_failure_marks_unconfirmed_command_failed(self):
         self.record_mqtt_health()
@@ -771,7 +792,7 @@ class BackendTests(TestCase):
         ):
             response = self.client.post(
                 f"/api/v1/devices/{self.led1.pk}/control/",
-                {"action": "TURN_ON", "idempotency_key": "offline"},
+                {"action": "TURN_ON"},
                 format="json",
             )
         # TestCase defers on_commit until after the response, but stored state must fail.
@@ -884,7 +905,7 @@ class BackendTests(TestCase):
         ):
             response = client.post(
                 f"/api/v1/devices/{self.led1.pk}/control/",
-                {"action": "TURN_ON", "idempotency_key": "jwt-command"},
+                {"action": "TURN_ON"},
                 format="json",
             )
         self.assertEqual(response.status_code, 202)

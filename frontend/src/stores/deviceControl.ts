@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { environment } from '../config/environment'
 import type { DeviceAction } from '../types/api'
 export interface ControlState {
-  action: DeviceAction; key: string; commandId: string | null
+  action: DeviceAction; commandId: string | null
   phase: 'pending' | 'reconciling'; message: string
 }
 export const useDeviceControlStore = defineStore('device-control', () => {

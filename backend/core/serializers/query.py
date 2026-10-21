@@ -1,9 +1,7 @@
-import hashlib
 import json
 from datetime import timedelta
 
 from django.conf import settings
-from django.db import connection
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django_celery_results.models import TaskResult
@@ -50,12 +48,3 @@ def mqtt_health():
         "broker_connected": False,
         "subscriptions_ready": False,
     }
-
-
-def advisory_transaction_lock(value):
-    if connection.vendor == "postgresql":
-        key = int.from_bytes(
-            hashlib.sha256(value.encode()).digest()[:8], "big", signed=True
-        )
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT pg_advisory_xact_lock(%s)", [key])

@@ -1,5 +1,5 @@
-import hashlib
 import json
+import uuid
 
 from django.conf import settings
 from django.db import transaction
@@ -16,7 +16,6 @@ from core.serializers.common import (
 )
 from core.serializers.device import device_key
 from core.serializers.device_history import DeviceHistorySerializer
-from core.serializers.query import advisory_transaction_lock, mqtt_health
 
 
 def convert_adc_to_lux(adc_reading: float) -> float:
@@ -192,7 +191,6 @@ class DeviceHistoryMQTTSerializer(StrictSerializer):
 
 class DeviceControlSerializer(StrictSerializer):
     action = serializers.ChoiceField(choices=["TURN_ON", "TURN_OFF"])
-    idempotency_key = serializers.RegexField(r"^[A-Za-z0-9_-]{1,128}$")
 
     def create(self, validated_data):
         from core.tasks import control_device  # Imported after Celery initialization.
@@ -200,53 +198,9 @@ class DeviceControlSerializer(StrictSerializer):
         request = self.context["request"]
         device_id = self.context["device"].pk
         action = validated_data["action"]
-        key = validated_data["idempotency_key"]
-        task_id = (
-            "iot-control-"
-            + hashlib.sha256(f"{request.user.pk}:{key}".encode()).hexdigest()
-        )
+        task_id = f"iot-control-{uuid.uuid4()}"
         publish_error = []
         with transaction.atomic():
-            advisory_transaction_lock(task_id)
-            existing = TaskResult.objects.filter(task_id=task_id).first()
-            if existing:
-                metadata = json.loads(existing.task_kwargs or "{}")
-                if isinstance(metadata, str):
-                    metadata = json.loads(metadata)
-                if (
-                    str(metadata.get("device_id")) != str(device_id)
-                    or metadata.get("action") != action
-                ):
-                    return {
-                        "data": {
-                            "error": {
-                                "code": "IDEMPOTENCY_CONFLICT",
-                                "message": "Key already used for another intent.",
-                                "details": {},
-                            }
-                        },
-                        "status": 409,
-                    }
-                history = (
-                    DeviceHistory.objects.select_related("device", "user")
-                    .filter(pk=metadata.get("history_id"), user=request.user)
-                    .first()
-                )
-                if history is None:
-                    return {
-                        "data": {
-                            "error": {
-                                "code": "COMMAND_NOT_FOUND",
-                                "message": "Referenced command no longer exists.",
-                                "details": {},
-                            }
-                        },
-                        "status": 404,
-                    }
-                return {
-                    "data": DeviceHistorySerializer(history).data,
-                    "status": 202 if history.status == "PENDING" else 200,
-                }
             device = Device.objects.select_for_update().filter(pk=device_id).first()
             if device is None:
                 return {
@@ -274,18 +228,6 @@ class DeviceControlSerializer(StrictSerializer):
                                 "command_id": str(pending.pk),
                                 "status_url": f"/api/v1/device-history/{pending.pk}/",
                             },
-                        }
-                    },
-                    "status": 409,
-                }
-            availability = mqtt_health().get("device_availability", "UNKNOWN")
-            if availability != "ONLINE":
-                return {
-                    "data": {
-                        "error": {
-                            "code": "DEVICE_NOT_CONNECTED",
-                            "message": "ESP32 is not connected; device control is disabled.",
-                            "details": {"availability": availability},
                         }
                     },
                     "status": 409,

@@ -16,7 +16,7 @@ it('maps the interface to the backend wire URLs and command body', async () => {
   await api.sensorData({ search: 'TEMP_01', from: '2026-10-06T12:00:00Z', page: 2, page_size: 15 })
   expect(fetch.mock.calls[4][0]).toBe('http://localhost:8000/api/v1/sensor-data/?search=TEMP_01&from=2026-10-06T12%3A00%3A00Z&limit=15&offset=15')
   expect(fetch.mock.calls[4][1].headers.Authorization).toBe('Bearer access-token')
-  const body = { action: 'TURN_ON' as const, idempotency_key: 'same-key' }
+  const body = { action: 'TURN_ON' as const }
   await api.control(1, body)
   expect(fetch.mock.calls[5][0]).toBe('http://localhost:8000/api/v1/devices/1/control/')
   expect(fetch.mock.calls[5][1]).toMatchObject({ method: 'POST', body: JSON.stringify(body), cache: 'no-store' })
@@ -33,7 +33,7 @@ it('refreshes an expired access token and retries the same command intent', asyn
     .mockResolvedValueOnce({ ok: true, status: 202, json: async () => ({ status: 'PENDING' }) })
   vi.stubGlobal('fetch', fetch)
   await auth.login('operator', 'test-only')
-  const body = { action: 'TURN_ON' as const, idempotency_key: 'same-key' }
+  const body = { action: 'TURN_ON' as const }
   await createHttpApi('http://localhost:8000/api/v1').control(1, body)
   expect(fetch.mock.calls[3][0]).toBe('http://localhost:8000/api/auth/token/refresh/')
   expect(fetch.mock.calls[2][1].body).toBe(fetch.mock.calls[4][1].body)

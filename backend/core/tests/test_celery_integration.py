@@ -154,7 +154,7 @@ class CeleryIntegrationTests(TransactionTestCase):
                     client.force_authenticate(user)
                     response = client.post(
                         f"/api/v1/devices/{led.pk}/control/",
-                        {"action": "TURN_ON", "idempotency_key": "real-celery-intent"},
+                        {"action": "TURN_ON"},
                         format="json",
                     )
                     self.assertEqual(response.status_code, 202)
@@ -181,14 +181,14 @@ class CeleryIntegrationTests(TransactionTestCase):
                     self.assertIsNotNone(task)
                     result = json.loads(task.result)
                     self.assertEqual(result["actual_state"], "ON")
-                    replay = client.post(
+                    next_command = client.post(
                         f"/api/v1/devices/{led.pk}/control/",
-                        {"action": "TURN_ON", "idempotency_key": "real-celery-intent"},
+                        {"action": "TURN_ON"},
                         format="json",
                     )
-                    self.assertEqual(replay.status_code, 200)
-                    self.assertEqual(replay.data["id"], history.pk)
-                    self.assertEqual(DeviceHistory.objects.count(), 1)
+                    self.assertEqual(next_command.status_code, 202)
+                    self.assertNotEqual(next_command.data["id"], history.pk)
+                    self.assertEqual(DeviceHistory.objects.count(), 2)
                 finally:
                     for process in reversed(processes):
                         process.terminate()

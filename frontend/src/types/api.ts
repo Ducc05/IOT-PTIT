@@ -41,7 +41,7 @@ export interface ListQuery {
   value?: number
   from?: string; to?: string; ordering?: string; page: number; page_size: number
 }
-export interface ControlRequest { action: DeviceAction; idempotency_key: string }
+export interface ControlRequest { action: DeviceAction }
 export interface IoTApi {
   sensorLatest(signal?: AbortSignal): Promise<SensorLatestResponse>
   sensorTrends(signal?: AbortSignal): Promise<SensorTrendsResponse>

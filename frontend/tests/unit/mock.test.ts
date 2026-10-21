@@ -29,18 +29,20 @@ describe('Mock backend contract', () => {
     expect((await api.history({ ...query, search: row.command_id })).count).toBe(1)
     expect((await api.history({ ...query, search: 'LED' })).count).toBe(0)
   })
-  it('returns one pending command for idempotent replay and rejects conflict', async () => {
-    const body = { action: 'TURN_OFF' as const, idempotency_key: 'unit-test' }
+  it('rejects controls while pending and creates a new command after completion', async () => {
+    const body = { action: 'TURN_OFF' as const }
     const command = await api.control(1, body)
     expect(command.status).toBe('PENDING')
-    expect((await api.control(1, body)).command_id).toBe(command.command_id)
-    await expect(api.control(1, { ...body, action: 'TURN_ON' })).rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' })
-    await expect(api.control(1, { ...body, idempotency_key: 'second' })).rejects.toMatchObject({ code: 'DEVICE_COMMAND_IN_PROGRESS' })
+    await expect(api.control(1, body)).rejects.toMatchObject({ code: 'DEVICE_COMMAND_IN_PROGRESS' })
+    await expect(api.control(1, { action: 'TURN_ON' })).rejects.toMatchObject({ code: 'DEVICE_COMMAND_IN_PROGRESS' })
     expect((await api.devices())[0].current_state).toBe('ON')
     vi.advanceTimersByTime(1600)
     expect((await api.command(command.command_id)).status).toBe('SUCCESS')
     expect((await api.devices())[0].current_state).toBe('OFF')
     expect((await api.history({ ...query, status: 'SUCCESS', search: String(command.id) })).count).toBe(1)
+    const next = await api.control(1, body)
+    expect(next.status).toBe('PENDING')
+    expect(next.command_id).not.toBe(command.command_id)
   })
   it('keeps mock readings and history stable over time', async () => {
     const before = await api.sensorLatest(); const beforeTrends = await api.sensorTrends(); const beforeDevices = await api.devices(); const count = (await api.sensorData(query)).count

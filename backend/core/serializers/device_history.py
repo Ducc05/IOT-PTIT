@@ -94,6 +94,6 @@ class DeviceHistorySerializer(serializers.ModelSerializer):
         if instance.status == "FAILED":
             error = result.get("error") or result.get("reason")
             data["error_code"] = error or "DEVICE_COMMAND_FAILED"
-            data["error_message"] = error or "Command failed or its response was not confirmed."
+            data["error_message"] = error or data["error_code"]
         data["status_url"] = f"/api/v1/device-history/{instance.pk}/"
         return data
