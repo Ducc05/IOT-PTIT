@@ -5,7 +5,7 @@ import { ApiError } from '../types/api'
 interface Session { username: string; email: string; full_name: string; student_id: string | null; avatar: string | null; access: string; refresh: string }
 interface CurrentUser { id: number; username: string; email: string; full_name: string; student_id: string | null; avatar: string | null }
 interface TokenPair { access: string; refresh?: string; username?: string; email?: string }
-interface ProfileUpdate { full_name: string; student_id: string | null; email?: string }
+interface ProfileUpdate { full_name: string; student_id: string | null; email: string }
 
 const storageKey = `iot-auth-${environment.baseUrl}`
 const authBase = environment.baseUrl.replace(/\/api\/v1\/?$/, '')
@@ -113,12 +113,23 @@ export const auth = {
   },
   async updateProfile(values: ProfileUpdate | FormData): Promise<CurrentUser> {
     if (!session.value) throw new ApiError('AUTHENTICATION_REQUIRED', 'Sign in to continue.', 401)
+    const current = session.value
+    let body: string | FormData
+    if (values instanceof FormData) {
+      body = new FormData()
+      body.set('full_name', current.full_name)
+      body.set('student_id', current.student_id ?? '')
+      body.set('email', current.email)
+      for (const [key, value] of values.entries()) body.set(key, value)
+    } else {
+      body = JSON.stringify(values)
+    }
     async function send(access: string) {
       try {
         return await fetch(`${authBase}/api/auth/me/`, {
-          method: 'PATCH', cache: 'no-store', signal: AbortSignal.timeout(12000),
-          headers: { Accept: 'application/json', ...(values instanceof FormData ? {} : { 'Content-Type': 'application/json' }), Authorization: `Bearer ${access}` },
-          body: values instanceof FormData ? values : JSON.stringify(values),
+          method: 'POST', cache: 'no-store', signal: AbortSignal.timeout(12000),
+          headers: { Accept: 'application/json', ...(body instanceof FormData ? {} : { 'Content-Type': 'application/json' }), Authorization: `Bearer ${access}` },
+          body,
         })
       } catch { throw new ApiError('NETWORK_ERROR', 'Cannot reach the backend.') }
     }

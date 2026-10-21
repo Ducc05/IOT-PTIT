@@ -38,10 +38,8 @@ class CurrentUserView(APIView):
         )
 
     @extend_schema(request=CurrentUserUpdateSerializer, responses=CurrentUserSerializer)
-    def patch(self, request):
-        serializer = CurrentUserUpdateSerializer(
-            request.user, data=request.data, partial=True
-        )
+    def post(self, request):
+        serializer = CurrentUserUpdateSerializer(request.user, data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
         return Response(CurrentUserSerializer(user, context={"request": request}).data)

@@ -74,7 +74,7 @@ test('Data searches exact measured values by type, keeps filters and rejects nam
   await expect(page.locator('.pagination-total')).toHaveText(`of ${rows.length} items`)
 })
 
-test('Time in Data Type searches local time through UTC bounds and restores on reload', async ({ page }) => {
+test('Time search accepts text copied from Date & Time, converts local time to UTC and restores on reload', async ({ page }) => {
   await useApiSession(page)
   const prototypes = await fixtures()
   const times = ['2026-10-07T05:34:55.999Z', '2026-10-07T05:34:56.000Z', '2026-10-07T05:34:56.500Z', '2026-10-07T05:34:57.000Z', '2026-10-07T05:35:00.000Z']
@@ -88,8 +88,10 @@ test('Time in Data Type searches local time through UTC bounds and restores on r
   })
   await page.goto('http://127.0.0.1:5174/data')
   await expect(page.locator('tbody .row-id')).toHaveCount(5)
+  const copiedTime = await page.locator('tbody .date-cell').nth(1).innerText()
   await page.getByLabel('Sensor type', { exact: true }).selectOption('TIME')
-  await page.getByLabel('Sensor time', { exact: true }).fill('2026-10-07T12:34:56')
+  await expect(page.getByLabel('Sensor time', { exact: true })).toHaveAttribute('type', 'text')
+  await page.getByLabel('Sensor time', { exact: true }).fill(copiedTime)
   await page.getByRole('button', { name: 'Filter', exact: true }).click()
   await expect(page.locator('tbody .row-id')).toHaveText(['#2', '#3'])
   expect(queries.at(-1)?.get('from')).toBe('2026-10-07T05:34:56.000Z')
@@ -99,7 +101,7 @@ test('Time in Data Type searches local time through UTC bounds and restores on r
   expect(queries.at(-1)?.has('value')).toBe(false)
   await page.reload()
   await expect(page.getByLabel('Sensor type', { exact: true })).toHaveValue('TIME')
-  await expect(page.getByLabel('Sensor time', { exact: true })).toHaveValue('2026-10-07T12:34:56')
+  await expect(page.getByLabel('Sensor time', { exact: true })).toHaveValue(copiedTime)
   await expect(page.locator('tbody .row-id')).toHaveCount(2)
   await page.getByLabel('Sensor time', { exact: true }).fill('2026-10-07T12:34')
   await page.getByRole('button', { name: 'Filter', exact: true }).click()

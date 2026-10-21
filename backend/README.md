@@ -127,7 +127,7 @@ Device History tags.
 | `/api/v1/device-history/{id}/` | Đọc kết quả bằng History PK, kể cả PENDING/FAILED |
 | `/api/auth/register/` | Tạo tài khoản qua Django User hiện cấu hình và cấp access/refresh token SimpleJWT |
 | `/api/auth/token/`, `/api/auth/token/refresh/` | SimpleJWT; POST username/password, rồi Bearer access token |
-| `/api/auth/me/` | GET cần JWT trả username, email, `full_name`, `student_id`; PATCH cần JWT chỉ cập nhật `full_name` và `student_id` của chính người đăng nhập |
+| `/api/auth/me/` | GET cần JWT trả hồ sơ gồm username, email, `full_name`, `student_id`, `avatar`; POST cần JWT cập nhật đầy đủ `full_name`, `student_id`, `email` của chính người đăng nhập, có thể kèm file `avatar` bằng multipart |
 
 Mọi endpoint `/api/v1/` yêu cầu Bearer access token; không trả nội dung IoT cho
 khách chưa đăng nhập. Đăng ký kiểm tra mật khẩu theo Django password validators,

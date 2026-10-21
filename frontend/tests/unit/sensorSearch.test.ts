@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createMockApi } from '../../src/api/mock'
+import { dateTime } from '../../src/utils/format'
 import { parseSensorValue, sensorDataQuery, sensorSearchError, sensorTimeRange, sensorValueError } from '../../src/utils/sensorSearch'
 
 describe('Sensor value search', () => {
@@ -50,5 +51,22 @@ describe('Sensor value search', () => {
     expect(blankTime.from).toBeUndefined()
     expect(blankTime.to).toBeUndefined()
     expect(blankTime.type).toBeUndefined()
+  })
+  it('accepts Date & Time copied from the table in the browser local timezone', () => {
+    for (let month = 0; month < 12; month++) {
+      const date = new Date(2026, month, 7, 12, 34, 56)
+      const displayed = dateTime(date.toISOString())
+      const range = sensorTimeRange(`  ${displayed}  `)!
+      expect(range.from).toBe(date.toISOString())
+      expect(Date.parse(range.to) - Date.parse(range.from)).toBe(1000)
+      expect(sensorDataQuery({ page: 1, page_size: 10, type: 'TIME', search: displayed })).toMatchObject(range)
+      expect(sensorSearchError('TIME', displayed)).toBe('')
+    }
+    const minute = sensorTimeRange('7 Oct 2026, 12:34')!
+    expect(minute.from).toBe(new Date(2026, 9, 7, 12, 34).toISOString())
+    expect(Date.parse(minute.to) - Date.parse(minute.from)).toBe(60000)
+    for (const invalid of ['30 Feb 2026, 12:34:56', '7 Oct 2026, 25:34:56', '7 Oct 2026, 12:34:60', '7 Fake 2026, 12:34:56']) {
+      expect(sensorTimeRange(invalid)).toBeNull()
+    }
   })
 })

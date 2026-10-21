@@ -53,16 +53,15 @@ class CurrentUserSerializer(serializers.ModelSerializer):
 
 
 class CurrentUserUpdateSerializer(StrictModelSerializer):
-    email = serializers.EmailField(required=False, allow_blank=True)
+    email = serializers.EmailField(required=True, allow_blank=True)
     avatar = serializers.ImageField(required=False)
 
     class Meta:
         model = User
         fields = ("full_name", "student_id", "email", "avatar")
         extra_kwargs: ClassVar[dict[str, dict[str, bool]]] = {
-            "full_name": {"required": False, "allow_blank": False},
-            "student_id": {"required": False, "allow_blank": False, "allow_null": True},
-            "email": {"required": False, "allow_blank": True},
+            "full_name": {"required": True, "allow_blank": True},
+            "student_id": {"required": True, "allow_blank": False, "allow_null": True},
         }
 
     def validate_avatar(self, value):

@@ -6,7 +6,6 @@ import lightIcon from '../../assets/sensor-types/light.svg'
 import ledIcon from '../../assets/device-types/led.svg'
 import userIcon from '../../assets/history-user.svg'
 import type { CommandResource, SensorType } from '../../types/api'
-import { environment } from '../../config/environment'
 import { useListing } from '../../composables/useListing'
 import { dateTime, number } from '../../utils/format'
 import AppIcon from '../common/AppIcon.vue'
@@ -41,7 +40,7 @@ const sortOptions = computed(() => {
 </script>
 <template>
   <div class="page listing-page">
-    <PageHeader :title="kind === 'data' ? 'Data' : 'History'" :subtitle="kind === 'data' ? '' : ''" :updated-at="updatedAt" :refreshing="loading" :live="environment.source === 'api'" />
+    <PageHeader :title="kind === 'data' ? 'Data' : 'History'" :subtitle="kind === 'data' ? '' : ''" :updated-at="updatedAt" :refreshing="loading" />
     <QueryFilters v-model="draft" :kind="kind" :devices="devices" :error="formError" :loading="loading" @apply="apply" @reset="reset" />
     <ResourceNotice :error="error || optionsError" :loading="false" :empty="!data" @retry="refresh" />
     <section class="table-card card"><div class="table-card-header"><div class="table-title"><h2>{{ kind === 'data' ? 'Sensor Data Table' : 'Device History Table' }}</h2></div>

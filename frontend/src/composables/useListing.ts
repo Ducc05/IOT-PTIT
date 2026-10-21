@@ -45,7 +45,7 @@ export function useListing(kind: 'data' | 'history') {
       }
       throw cause
     }
-  })
+  }, 0)
   function update(query: ListQuery) {
     const clean = Object.fromEntries(Object.entries(query).filter(([, v]) => v !== '' && v !== undefined).map(([k, v]) => [k, String(v)]))
     return router.replace({ query: clean })

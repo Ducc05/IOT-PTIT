@@ -5,7 +5,15 @@ import { parseLocalDateTime } from './dateRange'
 export const sensorSearchTypes = ['TEMPERATURE', 'HUMIDITY', 'LIGHT', 'TIME']
 
 export function sensorTimeRange(input: string): { from: string; to: string } | null {
-  const match = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})(?::(\d{2}))?$/.exec(input.trim())
+  let text = input.trim().replace(/\s+/g, ' ')
+  const displayed = /^(\d{1,2}) ([a-z]{3,4}) (\d{4}),? (\d{2}:\d{2}(?::\d{2})?)$/i.exec(text)
+  if (displayed) {
+    const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+    const month = months.indexOf(displayed[2].toLowerCase().replace(/^sept$/, 'sep')) + 1
+    if (!month) return null
+    text = `${displayed[3]}-${String(month).padStart(2, '0')}-${displayed[1].padStart(2, '0')}T${displayed[4]}`
+  }
+  const match = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})(?::(\d{2}))?$/.exec(text)
   if (!match) return null
   const date = parseLocalDateTime(match[1])
   if (!date || (match[2] !== undefined && Number(match[2]) > 59)) return null
@@ -27,7 +35,7 @@ export function sensorValueError(input: string) {
 }
 
 export function sensorSearchError(type: string | undefined, input: string) {
-  if (type === 'TIME') return input.trim() && !sensorTimeRange(input) ? 'Vui lòng chọn ngày giờ hợp lệ.' : ''
+  if (type === 'TIME') return input.trim() && !sensorTimeRange(input) ? 'Vui lòng nhập ngày giờ hợp lệ, ví dụ 21 Oct 2026, 12:34:56.' : ''
   return sensorValueError(input)
 }
 

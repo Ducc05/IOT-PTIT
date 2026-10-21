@@ -15,7 +15,7 @@ test('anonymous visitors see only sign in, then JWT login opens Dashboard and lo
   page.on('request', request => { if (request.url().includes('/api/v1/')) contentRequests.push(request.url()) })
   await page.route(`${origin}/api/auth/token/`, route => route.fulfill({ json: { access: 'login-access', refresh: 'login-refresh' } }))
   await page.route(`${origin}/api/auth/me/`, async route => {
-    if (route.request().method() === 'PATCH') {
+    if (route.request().method() === 'POST') {
       const values = route.request().postDataJSON()
       expect(values).toEqual({ full_name: 'Nguyễn Văn A', student_id: 'B23DCCN193', email: 'updated@example.com' })
       Object.assign(account, values)
@@ -47,6 +47,9 @@ test('anonymous visitors see only sign in, then JWT login opens Dashboard and lo
   await expect(page.getByRole('button', { name: 'Chỉnh sửa email' })).toContainText('operator@example.com')
   await expect(page.getByRole('button', { name: 'Chỉnh sửa mã sinh viên' })).toContainText('Chưa cập nhật')
   await page.getByRole('button', { name: /Admin Example/ }).click()
+  await expect(page.getByLabel('Họ và tên')).toHaveValue('Admin Example')
+  await expect(page.getByLabel('Mã sinh viên')).toHaveValue('')
+  await expect(page.getByLabel('Email')).toHaveValue('operator@example.com')
   await page.getByLabel('Họ và tên').fill('Nguyễn Văn A')
   await page.getByLabel('Mã sinh viên').fill('B23DCCN193')
   await page.getByLabel('Email').fill('updated@example.com')
@@ -60,6 +63,9 @@ test('anonymous visitors see only sign in, then JWT login opens Dashboard and lo
   await expect(page.getByRole('button', { name: /Nguyễn Văn A/ })).toBeVisible()
   await page.setViewportSize({ width: 390, height: 844 })
   await page.getByRole('button', { name: /Nguyễn Văn A/ }).click()
+  await expect(page.getByLabel('Họ và tên')).toHaveValue('Nguyễn Văn A')
+  await expect(page.getByLabel('Mã sinh viên')).toHaveValue('B23DCCN193')
+  await expect(page.getByLabel('Email')).toHaveValue('updated@example.com')
   await expect(page.getByLabel('Họ và tên')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Lưu', exact: true })).toBeInViewport()
   await page.screenshot({ path: 'test-results/previews/profile-account-mobile-edit.png' })

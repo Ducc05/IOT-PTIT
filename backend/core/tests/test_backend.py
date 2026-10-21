@@ -933,13 +933,13 @@ class BackendTests(TestCase):
         other = User.objects.create_user(username="other", password="test-only")
         anonymous = APIClient()
         self.assertEqual(
-            anonymous.patch(
+            anonymous.post(
                 "/api/auth/me/", {"full_name": "Someone"}, format="json"
             ).status_code,
             401,
         )
 
-        response = self.client.patch(
+        response = self.client.post(
             "/api/auth/me/",
             {
                 "full_name": "Nguyễn Văn A",
@@ -966,8 +966,8 @@ class BackendTests(TestCase):
         self.assertIsNone(other.student_id)
 
         self.assertEqual(
-            self.client.patch(
-                "/api/auth/me/", {"email": "invalid-email"}, format="json"
+            self.client.post(
+                "/api/auth/me/", self.profile_data(email="invalid-email"), format="json"
             ).status_code,
             400,
         )
@@ -978,8 +978,8 @@ class BackendTests(TestCase):
         ):
             with self.subTest(forbidden=forbidden):
                 self.assertEqual(
-                    self.client.patch(
-                        "/api/auth/me/", forbidden, format="json"
+                    self.client.post(
+                        "/api/auth/me/", self.profile_data(**forbidden), format="json"
                     ).status_code,
                     400,
                 )
@@ -987,37 +987,68 @@ class BackendTests(TestCase):
         self.assertEqual(self.user.username, "operator")
         self.assertTrue(self.user.check_password("test-only"))
 
+    def profile_data(self, **changes):
+        self.user.refresh_from_db()
+        return {
+            "full_name": self.user.full_name,
+            "student_id": self.user.student_id,
+            "email": self.user.email,
+            **changes,
+        }
+
+    def test_current_user_post_requires_all_profile_fields(self):
+        original = self.profile_data(full_name="Operator", email="operator@example.com")
+        response = self.client.post("/api/auth/me/", original, format="json")
+        self.assertEqual(response.status_code, 200)
+        for field in original:
+            with self.subTest(missing=field):
+                incomplete = {
+                    key: value for key, value in original.items() if key != field
+                }
+                response = self.client.post("/api/auth/me/", incomplete, format="json")
+                self.assertEqual(response.status_code, 400)
+                self.assertIn(field, response.data["error"]["details"])
+                self.assertEqual(self.profile_data(), original)
+        self.assertEqual(
+            self.client.patch("/api/auth/me/", original, format="json").status_code, 405
+        )
+        self.assertEqual(User.objects.filter(pk=self.user.pk).count(), 1)
+
     def test_student_id_must_be_unique_and_can_be_cleared(self):
         User.objects.create_user(
             username="other", password="test-only", student_id="B23DCCN193"
         )
         self.assertEqual(
-            self.client.patch(
-                "/api/auth/me/", {"student_id": "B23DCCN193"}, format="json"
+            self.client.post(
+                "/api/auth/me/",
+                self.profile_data(student_id="B23DCCN193"),
+                format="json",
             ).status_code,
             400,
         )
         self.assertEqual(
-            self.client.patch(
-                "/api/auth/me/", {"full_name": "  "}, format="json"
-            ).status_code,
-            400,
-        )
-        self.assertEqual(
-            self.client.patch(
-                "/api/auth/me/", {"student_id": ""}, format="json"
-            ).status_code,
-            400,
-        )
-        self.assertEqual(
-            self.client.patch(
-                "/api/auth/me/", {"student_id": "B23DCCN194"}, format="json"
+            self.client.post(
+                "/api/auth/me/", self.profile_data(full_name="  "), format="json"
             ).status_code,
             200,
         )
         self.assertEqual(
-            self.client.patch(
-                "/api/auth/me/", {"student_id": None}, format="json"
+            self.client.post(
+                "/api/auth/me/", self.profile_data(student_id=""), format="json"
+            ).status_code,
+            400,
+        )
+        self.assertEqual(
+            self.client.post(
+                "/api/auth/me/",
+                self.profile_data(student_id="B23DCCN194"),
+                format="json",
+            ).status_code,
+            200,
+        )
+        self.assertEqual(
+            self.client.post(
+                "/api/auth/me/", self.profile_data(student_id=None), format="json"
             ).status_code,
             200,
         )

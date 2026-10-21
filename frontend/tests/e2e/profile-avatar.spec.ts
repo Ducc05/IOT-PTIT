@@ -10,9 +10,12 @@ test('clicking the avatar selects one image, uploads it, and preserves it after 
   let uploads = 0
   let rejectUpload = false
   await page.route(`${origin}/api/auth/me/`, async route => {
-    if (route.request().method() === 'PATCH') {
+    if (route.request().method() === 'POST') {
       expect(route.request().headers()['content-type']).toContain('multipart/form-data; boundary=')
       expect(route.request().postDataBuffer()?.toString()).toContain('name="avatar"; filename="photo.png"')
+      expect(route.request().postDataBuffer()?.toString()).toContain('name="full_name"\r\n\r\nTester')
+      expect(route.request().postDataBuffer()?.toString()).toContain('name="student_id"\r\n\r\n\r\n')
+      expect(route.request().postDataBuffer()?.toString()).toContain('name="email"\r\n\r\n\r\n')
       uploads++
       if (rejectUpload) return route.fulfill({ status: 400, json: { error: { code: 'VALIDATION_ERROR', message: 'Ảnh tải lên không hợp lệ.', details: {} } } })
       account.avatar = `${origin}/media/avatars/new.png`

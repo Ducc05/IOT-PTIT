@@ -73,7 +73,7 @@ Profile ở chế độ API lấy `full_name`, `student_id` và email từ `/api
 - Database lưu trong localStorage (`iot-demo-database-v1`) của trình duyệt/origin hiện tại. Có fallback bộ nhớ nếu storage bị chặn. Mỗi tab giữ một bản mô phỏng riêng; đây không phải server đồng bộ giữa nhiều client.
 - Muốn seed lại: xóa key trên trong DevTools → Application → Local Storage rồi mở lại trang.
 - Data chọn Temperature/Humidity/Light rồi nhập giá trị số vào Search để tìm đúng số đo, kết hợp AND với loại cảm biến. All Types tìm giá trị trên cả ba loại. Search chấp nhận dấu thập phân chấm hoặc phẩy; không tìm ID/code/name.
-- Data không có ô From/To hoặc khoảng thời gian riêng. Chọn Time trong Type để Search chuyển thành ô ngày giờ theo timezone trình duyệt: nhập tới phút sẽ tìm trong phút đó, nhập giây sẽ tìm trong giây đó. Các tham số `from/to` cũ trên URL Data bị bỏ qua; khoảng thời gian query API được tạo từ Search khi chọn Time.
+- Data không có ô From/To hoặc khoảng thời gian riêng. Chọn Time trong Type để nhập text, có thể copy trực tiếp từ cột Date & Time (ví dụ `21 Oct 2026, 12:34:56`) theo timezone trình duyệt; vẫn hỗ trợ `2026-10-21T12:34:56`. Nhập tới phút sẽ tìm trong phút đó, nhập giây sẽ tìm trong giây đó. Các tham số `from/to` cũ trên URL Data bị bỏ qua; khoảng thời gian query API được tạo từ Search khi chọn Time.
 - History mock giữ Search ID/command UUID và TIMEOUT. API thật dùng History ID
   dạng số và ba trạng thái của model: PENDING/SUCCESS/FAILED. Bộ lọc khoảng
   thời gian trên History vẫn hoạt động với API thật.
@@ -97,7 +97,7 @@ src/
 
 Document luôn cố định trong `100dvh`, không cuộn toàn trang. Dashboard/chart co theo phần chiều cao còn lại. Data/History cố định 10 bản ghi mỗi trang (trang cuối hoặc kết quả lọc có thể ít hơn); không tự đổi page_size theo viewport. Hàng bảng dùng layout gọn để giữ 10 bản ghi trong chiều cao màn hình desktop. Header/footer/phân trang luôn ở trong viewport. Profile dùng grid co theo chiều cao. Mobile có navigation drawer và bảng cuộn ngang. Màn hình rất thấp hoặc backend có nhiều thiết bị vẫn cần cuộn trong vùng nội dung tương ứng.
 
-Polling không chồng request, bỏ response cũ, dừng khi rời route/tab ẩn, refresh khi tab hiện lại. Background refresh giữ dữ liệu đã có; loading/error/empty được xử lý riêng. Control không tự kết luận TIMEOUT khi mất mạng: giữ intent/idempotency key, cho kiểm tra lại, và nối lại polling khi quay lại Dashboard.
+Dashboard polling không chồng request, bỏ response cũ, dừng khi rời route/tab ẩn, refresh khi tab hiện lại. Data và History không tự động refresh theo thời gian hoặc khi quay lại tab; chỉ tải khi mở trang, lọc/reset, đổi trang, đổi số dòng, sắp xếp hoặc thử lại. Background refresh của Dashboard giữ dữ liệu đã có; loading/error/empty được xử lý riêng. Control không tự kết luận TIMEOUT khi mất mạng: giữ intent/idempotency key, cho kiểm tra lại, và nối lại polling khi quay lại Dashboard.
 Dashboard lấy sensor ACTIVE từ `sensors/?status=ACTIVE` và số đo mới nhất mỗi loại từ `sensor-data/?type=...&sensor_status=ACTIVE&ordering=-created_at,-id&limit=1` theo `VITE_REFRESH_MS`. Biểu đồ phân trang `sensor-data/?sensor_status=ACTIVE&ordering=-created_at,-id` theo `VITE_TRENDS_REFRESH_MS`, rồi gom 20 thời điểm đo mới nhất, kể cả khi dữ liệu cũ hơn 24 giờ.
 
 ## Nguồn thiết kế và giới hạn
