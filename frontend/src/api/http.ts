@@ -3,7 +3,7 @@ import { ApiError } from '../types/api'
 import type { IoTApi, ListQuery, PageResponse, Device, SensorDataRow, SensorLatest, SensorLatestResponse, SensorRegistryRow, SensorTrendPoint, SensorTrendsResponse, SensorType } from '../types/api'
 
 const sensorTypes: SensorType[] = ['TEMPERATURE', 'HUMIDITY', 'LIGHT']
-const sensorDefaults = [{ name: 'Temperature', unit: '°C' }, { name: 'Humidity', unit: '%' }, { name: 'Light', unit: 'ADC' }]
+const sensorDefaults = [{ name: 'Temperature', unit: '°C' }, { name: 'Humidity', unit: '%' }, { name: 'Light', unit: 'lux' }]
 
 export function createHttpApi(baseUrl: string): IoTApi {
   const base = baseUrl.replace(/\/$/, '')

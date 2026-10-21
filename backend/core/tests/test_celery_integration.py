@@ -28,7 +28,7 @@ class CeleryIntegrationTests(TransactionTestCase):
         for name, kind, unit in [
             ("Temperature", "TEMPERATURE", "°C"),
             ("Humidity", "HUMIDITY", "%"),
-            ("Light", "LIGHT", "ADC"),
+            ("Light", "LIGHT", "lux"),
         ]:
             Sensor.objects.create(name=name, type=kind, unit=unit)
         led = Device.objects.create(name="LED1")

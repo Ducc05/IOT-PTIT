@@ -18,7 +18,7 @@ class SensorSerializer(StrictModelSerializer):
             "status", getattr(self.instance, "status", Sensor.Status.ACTIVE)
         )
         unit = attrs.get("unit", getattr(self.instance, "unit", None))
-        expected = {"TEMPERATURE": "°C", "HUMIDITY": "%", "LIGHT": "ADC"}
+        expected = {"TEMPERATURE": "°C", "HUMIDITY": "%", "LIGHT": "lux"}
         if unit != expected.get(kind):
             raise serializers.ValidationError(
                 {"unit": f"Expected {expected.get(kind)} for this firmware."}

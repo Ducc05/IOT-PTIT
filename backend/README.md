@@ -20,7 +20,7 @@ Nguồn: `../mqtt/main.cpp`, bản đã cập nhật ngày 13/10/2026.
 | `esp32/led/history` | Lịch sử thao tác ALL bên ngoài; validate cấu trúc rồi log; không tự tạo User/History |
 | `esp32/led1/control`, `esp32/led2/control` | Backend gửi text `ON` hoặc `OFF`, retain=false |
 
-`light` là ADC 12-bit (0…4095), **không phải lux**. Registry phải đặt unit `ADC`.
+Firmware ESP32 gửi `light` là raw ADC 12-bit (0…4095); backend tự động chuyển đổi sang đơn vị `lux` khi lưu `SensorData` (khi che cảm biến thì ADC tăng, độ sáng lux giảm). Registry đặt unit `lux`.
 Temperature: °C, giới hạn parser 0…50 theo DHT11; Humidity: %, 0…100.
 [DHT11 specifications (Adafruit)](https://learn.adafruit.com/dht?view=all).
 

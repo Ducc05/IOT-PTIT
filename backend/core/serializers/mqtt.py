@@ -18,10 +18,32 @@ from core.serializers.device import device_key
 from core.serializers.device_history import DeviceHistorySerializer
 from core.serializers.query import advisory_transaction_lock, mqtt_health
 
+
+def convert_adc_to_lux(adc_reading: float) -> float:
+    """Convert 12-bit ESP32 LDR ADC reading (0-4095) to estimated lux.
+
+    The circuit uses an LDR with a pull-up resistor where higher ADC
+    corresponds to darkness (higher LDR resistance). Covering the sensor
+    causes the ADC value to rise and estimated lux to fall:
+    - Dark / fully covered (ADC >= 4000): < 1.0 lux
+    - Hand covered (ADC ~ 1600 - 2000): ~60 - 100 lux
+    - Normal ambient room (ADC ~ 700): ~350 - 400 lux
+    - Direct bright flashlight (ADC <= 100): up to 2000.0 lux
+    """
+    integer_adc = int(adc_reading)
+    if integer_adc >= 4095:
+        return 0.0
+    if integer_adc <= 0:
+        return 2000.0
+    resistance_ratio = (4095.0 - integer_adc) / integer_adc
+    calculated_lux = 60.0 * (resistance_ratio**1.2)
+    return round(min(calculated_lux, 2000.0), 1)
+
+
 SENSOR_FIELDS = {
     "temperature": ("TEMPERATURE", "°C"),
     "humidity": ("HUMIDITY", "%"),
-    "light": ("LIGHT", "ADC"),
+    "light": ("LIGHT", "lux"),
 }
 
 
@@ -76,7 +98,11 @@ class SensorMQTTSerializer(StrictSerializer):
                             field: "Provision one ACTIVE sensor with the correct firmware unit/mapping."
                         }
                     )
-                prepared.append((matches[0], validated_data[field]))
+                raw_reading = validated_data[field]
+                sensor_value = (
+                    convert_adc_to_lux(raw_reading) if field == "light" else raw_reading
+                )
+                prepared.append((matches[0], sensor_value))
             received_at = self.context.get("received_at") or timezone.now()
             rows = SensorData.objects.bulk_create(
                 [SensorData(sensor=s, value=v) for s, v in prepared]
@@ -340,7 +366,7 @@ class FirmwareRegistrySerializer(serializers.Serializer):
             for name, kind, unit in (
                 ("Temperature", "TEMPERATURE", "°C"),
                 ("Humidity", "HUMIDITY", "%"),
-                ("Light", "LIGHT", "ADC"),
+                ("Light", "LIGHT", "lux"),
             ):
                 existing = Sensor.objects.filter(type=kind, status="ACTIVE")
                 if existing.count() > 1:

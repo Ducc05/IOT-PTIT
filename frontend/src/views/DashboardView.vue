@@ -21,7 +21,7 @@ const { data: trendsData, error: trendsError, loading: trendsLoading, refresh: r
 const { store, control, retry, errors } = useDeviceControls(devices, refreshDevices)
 const sensors = computed<SensorLatest[]>(() => (['TEMPERATURE', 'HUMIDITY', 'LIGHT'] as SensorType[]).map((type, i) => latestData.value?.latest_sensors.find(s => s.type === type) || {
   sensor_id: null, sensor_code: null, name: ['Temperature', 'Humidity', 'Light'][i], type, value: null,
-  unit: ['°C', '%', environment.source === 'api' ? 'ADC' : 'lux'][i], measured_at: null, created_at: null, status: 'NO_DATA',
+  unit: ['°C', '%', 'lux'][i], measured_at: null, created_at: null, status: 'NO_DATA',
 }))
 function controlDevice(device: import('../types/api').Device, action: import('../types/api').DeviceAction) {
   if (environment.source === 'api' && !auth.session.value) { void router.push('/login?redirect=/dashboard'); return }

@@ -33,7 +33,7 @@ class BackendTests(TestCase):
             name="Temperature", type="TEMPERATURE", unit="°C"
         )
         self.hum = Sensor.objects.create(name="Humidity", type="HUMIDITY", unit="%")
-        self.light = Sensor.objects.create(name="Light", type="LIGHT", unit="ADC")
+        self.light = Sensor.objects.create(name="Light", type="LIGHT", unit="lux")
         self.led1 = Device.objects.create(name="LED1")
         self.led2 = Device.objects.create(name="LED2")
         self.reader = MQTTReader()
@@ -109,7 +109,7 @@ class BackendTests(TestCase):
         self.save_sensor({"success": True, "temperature": 28.5, "light": 0})
         self.assertEqual(SensorData.objects.count(), 2)
         self.assertFalse(self.hum.data.exists())
-        self.assertEqual(self.light.data.get().value, 0)
+        self.assertEqual(self.light.data.get().value, 2000.0)
 
     def test_dht_failure_preserves_light_only(self):
         self.save_sensor({"success": False, "error": "DHT11_READ_FAILED", "light": 42})
@@ -171,12 +171,27 @@ class BackendTests(TestCase):
             self.save_sensor({"success": True, "temperature": 23})
         self.assertFalse(SensorData.objects.exists())
 
-    def test_raw_adc_is_not_lux(self):
-        self.light.unit = "lux"
+    def test_sensor_unit_must_be_lux(self):
+        self.light.unit = "ADC"
         self.light.save()
         with self.assertRaises(ValidationError):
             self.save_sensor()
         self.assertFalse(SensorData.objects.exists())
+
+    def test_light_adc_converted_to_lux_decreases_when_covered(self):
+        self.save_sensor({"success": True, "light": 1800})
+        covered_reading = self.light.data.order_by("-created_at").first()
+        self.assertIsNotNone(covered_reading)
+        covered_lux = covered_reading.value
+
+        self.save_sensor({"success": True, "light": 700})
+        ambient_reading = self.light.data.order_by("-created_at").first()
+        self.assertIsNotNone(ambient_reading)
+        ambient_lux = ambient_reading.value
+
+        self.assertGreater(ambient_lux, covered_lux)
+        self.assertEqual(covered_lux, 80.3)
+        self.assertEqual(ambient_lux, 399.1)
 
     def test_equal_values_in_distinct_publishes_are_not_deduplicated(self):
         self.save_sensor()

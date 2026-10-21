@@ -7,7 +7,7 @@ const props = defineProps<{ points: SensorTrendPoint[] }>()
 const series = [
   { key: 'temperature' as const, name: 'Temperature', color: '#ef4444', unit: '°C', min: 0, max: 50 },
   { key: 'humidity' as const, name: 'Humidity', color: '#3b82f6', unit: '%', min: 0, max: 100 },
-  { key: 'light' as const, name: 'Light', color: '#f59e0b', unit: environment.source === 'api' ? 'ADC' : 'lux', min: 0, max: environment.source === 'api' ? 4095 : 1000 },
+  { key: 'light' as const, name: 'Light', color: '#f59e0b', unit: 'lux', min: 0, max: 2000 },
 ]
 const active = ref<number | null>(null)
 const hidden = ref<string[]>([])
